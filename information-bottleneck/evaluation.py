@@ -32,7 +32,7 @@ class EmbeddedDataset:
 
                 p_z_given_x = encoder(x)
 
-                reps.append(p_z_given_x.mean.detach())
+                reps.append(p_z_given_x.mean().data)
                 ys.append(y)
 
             ys = torch.cat(ys, 0)
@@ -70,8 +70,14 @@ def split(dataset, size, split_type):
     if split_type == 'Random':
         data_split, _ = torch.utils.data.random_split(dataset, [size, len(dataset) - size])
     elif split_type == 'Balanced':
+        print('Im here')
         class_ids = {}
         for idx, (_, y) in enumerate(dataset):
+            try:
+                print('Hello')
+                y = int(y.item())
+            except:
+                pass
             if y not in class_ids:
                 class_ids[y] = []
             class_ids[y].append(idx)
