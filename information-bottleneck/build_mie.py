@@ -173,7 +173,7 @@ def train_MI(encoder, beta=0, mie_on_test=False, seed=69, num_epochs=2000, eval_
                 plt.plot(np.arange(len(mi_df)), mi_df['X'], label='I(X,Z)')
                 plt.plot(np.arange(len(mi_df)), mi_df['Y'], label='I(Z,Y)')
                 plt.legend()
-                plt.savefig('mie_curve_%s_%s_%s_%s_%s.png' % (enc_type.lower(), 'test' if mie_on_test else 'train', beta if not use_scheduler else 'sched', int(1/weight_decay) if weight_decay != 0 else 0))
+                plt.savefig('mie_curve_%s_%s_%s_%s_%s.png' % (enc_type.lower(), 'test' if mie_on_test else 'train', beta if not use_scheduler else 'sched', int(1/weight_decay) if weight_decay != 0 else 0, seed))
                 break
 
             
