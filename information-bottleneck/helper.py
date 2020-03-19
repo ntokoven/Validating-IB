@@ -45,7 +45,7 @@ def get_named_layers(net):
 
 # Compute accuracy given prediction logit
 def accuracy(predictions, targets):
-    if targets.ndim == 1:
+    if targets.ndimension() == 1:
         accuracy = (predictions.argmax(dim=1) == targets).type(torch.FloatTensor).mean().item()
     else:
         accuracy = (predictions.argmax(dim=1) == targets.argmax(dim=1)).type(torch.FloatTensor).mean().item()
