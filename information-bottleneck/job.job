@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=example
+#SBATCH --job-name=generative_capability1e-3
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=3
 #SBATCH --ntasks-per-node=1
@@ -21,4 +21,4 @@ export LD_LIBRARY_PATH=/hpc/eb/Debian9/cuDNN/7.1-CUDA-8.0.44-GCCcore-5.4.0/lib64
 
 source activate thesis_env
 
-srun python3 -u main.py --dataroot=. --cuda
+srun python3 -u generative_capability.py --layers_to_track 1,2,3 --weight_decay 1e-3
