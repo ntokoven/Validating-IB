@@ -247,7 +247,7 @@ def main():
             mie_layers[layer].append((MI_X, MI_Y))
             print('MI values for %s - %s, %s' % (layer, MI_X, MI_Y))
     
-    build_information_plane(mie_layers, layers_names, seeds)
+    build_information_plane(pd.DataFrame.from_dict(mie_layers), layers_names, seeds)
         
     print('Elapsed time - ', time.time() - start_time)
 
