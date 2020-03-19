@@ -185,7 +185,6 @@ def build_information_plane(mi_values, layers_names, seeds):
     colors = ['black', 'blue', 'red', 'green', 'yellow']
     for i in range(len(layers_names)):
         for j in range(len(seeds)):
-            breakpoint()
             ax2.scatter(mi_df.loc[0, layers_names[i]][j], mi_df.loc[1, layers_names[i]][j], color=colors[i], label=layers_names[i])
             
             ax2.annotate(layers_names[i], (mi_df.loc[0, layers_names[i]][j], mi_df.loc[1, layers_names[i]][j]))
