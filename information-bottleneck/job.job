@@ -6,7 +6,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --time=1:00:00
 #SBATCH --mem=60000M
-#SBATCH --partition=gpu_shared_course
+#SBATCH --partition=gpu_shared
 #SBATCH --gres=gpu:1
 #SBATCH --mail-type=BEGIN,END
 #SBATCH --mail-user=nikita.tokovenko@student.uva.nl

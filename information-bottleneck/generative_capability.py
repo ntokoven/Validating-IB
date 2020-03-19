@@ -100,8 +100,6 @@ def plot_acc_numlabels(acc_df, layers_names, best_performance, num_labels_range)
           os.makedirs(FLAGS.result_path)
     fig1.savefig(FLAGS.result_path+'/acc_%s_%s.png' % (enc_type.lower(), int(1/weight_decay) if weight_decay != 0 else 0))
 
-
-
 def abc_metric(best_performance, accuracy_over_labels, nums):
     perf = best_performance * np.ones(len(nums))
     x_y_curve1 = [(np.log10(nums)[i], accuracy_over_labels[i]) for i in range(len(nums))]
@@ -133,7 +131,6 @@ def main():
     num_labels_range = list(train_subsets.keys()) 
     print('Done custom split \n')
 
-    #Add functionality to convert string to list of layer positions
     if FLAGS.layers_to_track:
         layers_to_track = FLAGS.layers_to_track.split(",")
         layers_to_track = [int(layer_num) for layer_num in layers_to_track]
@@ -185,7 +182,7 @@ def main():
 
 
 if __name__ == '__main__':
-      # Command line arguments
+    # Command line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('--enc_type', type = str, default = 'MLP',
                         help='Type of encoder to train')
@@ -194,7 +191,7 @@ if __name__ == '__main__':
     parser.add_argument('--default_seed', type = int, default = 69,
                         help='Default seed for encoder training')
     parser.add_argument('--seeds', type = str, default = '9,42,103,48,79',
-                        help='Comma separated list of number of units in each hidden layer')
+                        help='Comma separated list of random seeds')
     parser.add_argument('--layers_to_track', type = str, default = '1',
                         help='Comma separated list of inverse positions of encoding layers to evaluate (starting from 1)')
     parser.add_argument('--learning_rate', type = float, default = 1e-3,
