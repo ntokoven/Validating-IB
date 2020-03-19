@@ -87,8 +87,8 @@ def train_MI(encoder, beta=0, mie_on_test=False, seed=69, num_epochs=2000, eval_
     mi_estimator_Y = MIEstimator(z_dim, y_dim).to(device)
 
     optimizer = optim.Adam([
-    {'params': mi_estimator_X.parameters(), 'lr':1e-5}, #default 1e-5
-    {'params': mi_estimator_Y.parameters(), 'lr':1e-4}, #default 1e-4
+    {'params': mi_estimator_X.parameters(), 'lr':mie_lr_x}, #default 1e-5
+    {'params': mi_estimator_Y.parameters(), 'lr':mie_lr_y}, #default 1e-4
     ])
     if beta == 0:
         use_scheduler = True
@@ -185,6 +185,7 @@ def build_information_plane(mi_values, layers_names, seeds):
     colors = ['black', 'blue', 'red', 'green', 'yellow']
     for i in range(len(layers_names)):
         for j in range(len(seeds)):
+            breakpoint()
             ax2.scatter(mi_df.loc[0, layers_names[i]][j], mi_df.loc[1, layers_names[i]][j], color=colors[i], label=layers_names[i])
             
             ax2.annotate(layers_names[i], (mi_df.loc[0, layers_names[i]][j], mi_df.loc[1, layers_names[i]][j]))
