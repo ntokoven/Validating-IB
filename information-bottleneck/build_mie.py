@@ -68,7 +68,7 @@ def train_encoder(dnn_hidden_units, dnn_input_units=784, dnn_output_units=10, z_
     return Net
 
 
-def train_MI(encoder, beta=0, mie_on_test=False, seed=69, num_epochs=2000, eval_freq=1, layer=''):
+def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, eval_freq=1, layer=''):
     
     if not mie_on_test:
         loader = train_loader
@@ -156,24 +156,32 @@ def train_MI(encoder, beta=0, mie_on_test=False, seed=69, num_epochs=2000, eval_
             print('Beta - ', beta)
                 
             if epoch >= 10:
-              delta_x = np.abs(mi_mean_est_all['X'][-2] - mi_mean_est_all['X'][-1])
+              delta_x = mi_mean_est_all['X'][-2] - mi_mean_est_all['X'][-1]
               print('Delta X: ', delta_x)
-              delta_y = np.abs(mi_mean_est_all['Y'][-2] - mi_mean_est_all['Y'][-1])
+              delta_y = mi_mean_est_all['Y'][-2] - mi_mean_est_all['Y'][-1]
               print('Delta Y: ', delta_y)
-              print('\nMean MI X for last 10', mi_mean_est_all['X'][-10:])
-              print('Mean MI Y for last 10', mi_mean_est_all['Y'][-10:])
+              print('\nMean MI X for last 10', np.mean(mi_mean_est_all['X'][-10:]))
+              print('Mean MI Y for last 10', np.mean(mi_mean_est_all['Y'][-10:]))
+              print('\nMean MI X for last 20', np.mean(mi_mean_est_all['X'][-20:]))
+              print('Mean MI Y for last 20', np.mean(mi_mean_est_all['Y'][-20:]))
+              print('\nMean MI X for last 30', np.mean(mi_mean_est_all['X'][-30:]))
+              print('Mean MI Y for last 30', np.mean(mi_mean_est_all['Y'][-30:]))
               mi_df = pd.DataFrame.from_dict(mi_mean_est_all)
-              mi_df.to_csv('mie_%s_%s_%s_%s.csv' % (enc_type.lower(), 'test' if mie_on_test else 'train', beta if not use_scheduler else 'sched', int(1/weight_decay) if weight_decay != 0 else 0), sep=' ')
+              if not os.path.exists(FLAGS.result_path):
+                    os.makedirs(FLAGS.result_path)
+              mi_df.to_csv(FLAGS.results_path+'/mie_%s_%s_b%s_w%s_s%s.csv' % (enc_type.lower(), 'test' if mie_on_test else 'train', int(1/weight_decay) if weight_decay != 0 else 0, seed), sep=' ')
             print('Max I_est(X, Z) - %s' % max_MI_x)
             print('Max I_est(Z, Y) - %s' % max_MI_y)
             print('Elapsed time training MI for %s: %s' % (layer, time.time() - start_time))
             print('#'*30,'\n')
 
-            if epoch >= 20 and np.mean(mi_mean_est_all['X'][-10]) > max_MI_x - 1e-1 or epoch == num_epochs - 1:
+            if epoch >= 20 and np.mean(mi_mean_est_all['X'][-20:]) > max_MI_x - 1e-1 or epoch == num_epochs - 1:
+                if not os.path.exists(FLAGS.result_path):
+                    os.makedirs(FLAGS.result_path)
                 plt.plot(np.arange(len(mi_df)), mi_df['X'], label='I(X,Z)')
                 plt.plot(np.arange(len(mi_df)), mi_df['Y'], label='I(Z,Y)')
                 plt.legend()
-                plt.savefig('mie_curve_%s_%s_%s_%s_%s.png' % (enc_type.lower(), 'test' if mie_on_test else 'train', beta if not use_scheduler else 'sched', int(1/weight_decay) if weight_decay != 0 else 0, seed))
+                plt.savefig(FLAGS.result_path+'/mie_curve_%s_%s_w%s_s%s.png' % (enc_type.lower(), 'test' if mie_on_test else 'train', int(1/weight_decay) if weight_decay != 0 else 0, seed))
                 break
 
             
@@ -183,18 +191,21 @@ def build_information_plane(mi_values, layers_names, seeds):
     mi_df = pd.DataFrame.from_dict(mi_values)
     fig2, ax2 = plt.subplots(1, 1, sharex=True)
     colors = ['black', 'blue', 'red', 'green', 'yellow']
+    breakpoint()
     for i in range(len(layers_names)):
         for j in range(len(seeds)):
             ax2.scatter(mi_df.loc[0, layers_names[i]][j], mi_df.loc[1, layers_names[i]][j], color=colors[i], label=layers_names[i])
             
-            ax2.annotate(layers_names[i], (mi_df.loc[0, layers_names[i]][j], mi_df.loc[1, layers_names[i]][j]))
+            ax2.annotate(layers_names[i]+' (seed %d)' % seeds[i], (mi_df.loc[0, layers_names[i]][j], mi_df.loc[1, layers_names[i]][j]))
             ax2.grid()
     ax2.set_xlabel('I(X, Z)')
     ax2.set_ylabel('I(Z, Y)')
 
     fig2.legend()
     fig2.set_size_inches(10, 7, forward=True)
-    fig2.savefig('info_plane_%s_%s_%s_%s.png' % (enc_type.lower(), 'test' if mie_on_test else 'train', mie_beta, int(1/weight_decay) if weight_decay != 0 else 0))
+    if not os.path.exists(FLAGS.result_path+'/information_planes'):
+        os.makedirs(FLAGS.result_path+'/information_planes')
+    fig2.savefig(FLAGS.result_path+'/information_planes/info_plane_%s_%s_b%s_w%s.png' % (enc_type.lower(), 'test' if mie_on_test else 'train', mie_beta, int(1/weight_decay) if weight_decay != 0 else 0))
 
 def main():
 
@@ -239,10 +250,10 @@ def main():
                 MI_X, MI_Y, MIE_X, MIE_Y = train_MI(Encoder.models[layer], beta=mie_beta, mie_on_test=mie_on_test, seed=seeds[i], layer=layer, num_epochs=mie_num_epochs)
             else:
                 MI_X, MI_Y, MIE_X, MIE_Y = train_MI(Encoder, beta=mie_beta, mie_on_test=mie_on_test, seed=seeds[i], num_epochs=mie_num_epochs)
-            if not os.path.exists(FLAGS.result_path):
-                os.makedirs(FLAGS.result_path)
-            torch.save(MIE_X.state_dict(), FLAGS.result_path + 'mie_x_%s_%s_%s_%s_%s.pt' % (enc_type.lower(), 'test' if mie_on_test else 'train', mie_beta, int(1/weight_decay) if weight_decay != 0 else 0, seed))
-            torch.save(MIE_Y.state_dict(), FLAGS.result_path + 'mie_y_%s_%s_%s_%s_%s.pt' % (enc_type.lower(), 'test' if mie_on_test else 'train', mie_beta, int(1/weight_decay) if weight_decay != 0 else 0, seed))
+            if not os.path.exists(FLAGS.result_path+'/estimator_models'):
+                os.makedirs(FLAGS.result_path+'/estimator_models')
+            torch.save(MIE_X.state_dict(), FLAGS.result_path + '/estimator_models/mie_x_%s_%s_b%s_w%s_s%s.pt' % (enc_type.lower(), 'test' if mie_on_test else 'train', mie_beta, int(1/weight_decay) if weight_decay != 0 else 0, seeds[i]))
+            torch.save(MIE_Y.state_dict(), FLAGS.result_path + '/estimator_models/mie_y_%s_%s_b%s_w%s_s%s.pt' % (enc_type.lower(), 'test' if mie_on_test else 'train', mie_beta, int(1/weight_decay) if weight_decay != 0 else 0, seed[i]))
             mie_layers[layer].append((MI_X, MI_Y))
             print('MI values for %s - %s, %s' % (layer, MI_X, MI_Y))
     
