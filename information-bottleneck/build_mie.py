@@ -156,32 +156,32 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, eval_
             print('Beta - ', beta)
                 
             if epoch >= 10:
-              delta_x = mi_mean_est_all['X'][-2] - mi_mean_est_all['X'][-1]
-              print('Delta X: ', delta_x)
-              delta_y = mi_mean_est_all['Y'][-2] - mi_mean_est_all['Y'][-1]
-              print('Delta Y: ', delta_y)
-              print('\nMean MI X for last 10', np.mean(mi_mean_est_all['X'][-10:]))
-              print('Mean MI Y for last 10', np.mean(mi_mean_est_all['Y'][-10:]))
-              print('\nMean MI X for last 20', np.mean(mi_mean_est_all['X'][-20:]))
-              print('Mean MI Y for last 20', np.mean(mi_mean_est_all['Y'][-20:]))
-              print('\nMean MI X for last 30', np.mean(mi_mean_est_all['X'][-30:]))
-              print('Mean MI Y for last 30', np.mean(mi_mean_est_all['Y'][-30:]))
-              mi_df = pd.DataFrame.from_dict(mi_mean_est_all)
-              if not os.path.exists(FLAGS.result_path):
-                    os.makedirs(FLAGS.result_path)
-              mi_df.to_csv(FLAGS.results_path+'/mie_%s_%s_b%s_w%s_s%s.csv' % (enc_type.lower(), 'test' if mie_on_test else 'train', int(1/weight_decay) if weight_decay != 0 else 0, seed), sep=' ')
+                delta_x = mi_mean_est_all['X'][-2] - mi_mean_est_all['X'][-1]
+                print('Delta X: ', delta_x)
+                delta_y = mi_mean_est_all['Y'][-2] - mi_mean_est_all['Y'][-1]
+                print('Delta Y: ', delta_y)
+                print('\nMean MI X for last 10', np.mean(mi_mean_est_all['X'][-10:]))
+                print('Mean MI Y for last 10', np.mean(mi_mean_est_all['Y'][-10:]))
+                print('\nMean MI X for last 20', np.mean(mi_mean_est_all['X'][-20:]))
+                print('Mean MI Y for last 20', np.mean(mi_mean_est_all['Y'][-20:]))
+                print('\nMean MI X for last 30', np.mean(mi_mean_est_all['X'][-30:]))
+                print('Mean MI Y for last 30', np.mean(mi_mean_est_all['Y'][-30:]))
+                mi_df = pd.DataFrame.from_dict(mi_mean_est_all)
+                if not os.path.exists(FLAGS.result_path+'/mie_values'):
+                    os.makedirs(FLAGS.result_path+'/mie_values')
+                mi_df.to_csv(FLAGS.results_path+'/mie_values/mie_%s_%s_b%s_w%s_s%s.csv' % (enc_type.lower(), 'test' if mie_on_test else 'train', int(1/weight_decay) if weight_decay != 0 else 0, seed), sep=' ')
             print('Max I_est(X, Z) - %s' % max_MI_x)
             print('Max I_est(Z, Y) - %s' % max_MI_y)
             print('Elapsed time training MI for %s: %s' % (layer, time.time() - start_time))
             print('#'*30,'\n')
 
             if epoch >= 20 and np.mean(mi_mean_est_all['X'][-20:]) > max_MI_x - 1e-1 or epoch == num_epochs - 1:
-                if not os.path.exists(FLAGS.result_path):
-                    os.makedirs(FLAGS.result_path)
+                if not os.path.exists(FLAGS.result_path+'/mie_curves'):
+                    os.makedirs(FLAGS.result_path+'/mie_curves')
                 plt.plot(np.arange(len(mi_df)), mi_df['X'], label='I(X,Z)')
                 plt.plot(np.arange(len(mi_df)), mi_df['Y'], label='I(Z,Y)')
                 plt.legend()
-                plt.savefig(FLAGS.result_path+'/mie_curve_%s_%s_w%s_s%s.png' % (enc_type.lower(), 'test' if mie_on_test else 'train', int(1/weight_decay) if weight_decay != 0 else 0, seed))
+                plt.savefig(FLAGS.result_path+'/mie_curves/mie_curve_%s_%s_w%s_s%s.png' % (enc_type.lower(), 'test' if mie_on_test else 'train', int(1/weight_decay) if weight_decay != 0 else 0, seed))
                 break
 
             
@@ -239,7 +239,7 @@ def main():
 
     for i in range(len(seeds)):
 
-        print('\nRunning with seed %d out of %d' % (i+1, len(seeds)))
+        print('\nRunning for seed %d out of %d' % (i+1, len(seeds)))
         torch.manual_seed(seeds[i])
         np.random.seed(seeds[i])
         seed(seeds[i])
@@ -281,7 +281,7 @@ if __name__=='__main__':
                         help='Learning rate for estimation of mutual information with input')
     parser.add_argument('--mie_lr_y', type = float, default = 1e-4,
                         help='Learning rate for estimation of mutual information with target')
-    parser.add_argument('--mie_beta', type = float, default = 0,
+    parser.add_argument('--mie_beta', type = float, default = 1,
                         help='Lagrangian multiplier representing prioirity of MI(z, y) over MI(x, z)')
     parser.add_argument('--mie_on_test', type = bool, default = False,
                         help='Whether to build MI estimator using training or test set')
@@ -333,17 +333,7 @@ if __name__=='__main__':
     test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True, num_workers=1)
 
     # Single time define the testing set. Keep it fixed until the end
-    xs = []
-    ys = []
-
-    for x, y in test_loader:
-        xs.append(x)
-        ys.append(y)
-
-    xs = torch.cat(xs, 0)
-    ys = torch.cat(ys, 0)
-
-    X_test, y_test = torch.tensor(xs, requires_grad=False).flatten(start_dim=1).to(device), torch.tensor(ys, requires_grad=False).type(torch.LongTensor).to(device)
+    X_test, y_test = build_test_set(test_loader)
 
     if FLAGS.dnn_hidden_units:
         dnn_hidden_units = FLAGS.dnn_hidden_units.split(",")

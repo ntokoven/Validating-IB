@@ -52,6 +52,24 @@ def accuracy(predictions, targets):
     return accuracy
 
 
+def build_test_set(test_loader):
+    xs = []
+    ys = []
+    for x, y in test_loader:
+        xs.append(x)
+        ys.append(y)
+
+    xs = torch.cat(xs, 0)
+    ys = torch.cat(ys, 0)
+    
+    X_test, y_test = torch.tensor(xs, requires_grad=False).flatten(start_dim=1).to(device), torch.tensor(ys, requires_grad=False).type(torch.LongTensor).to(device)
+    return X_test, y_test
+
+
+###############################################
+# Helper functions to work with the Toy dataset
+###############################################
+
 #Calculate values MI for known distributions (for evaluating Toy example)
 def calc_mutual_information(hidden, x_train_int, y_train):
     n_train_samples = len(x_train_int)
