@@ -52,7 +52,7 @@ def accuracy(predictions, targets):
     return accuracy
 
 
-def build_test_set(test_loader):
+def build_test_set(test_loader, device):
     xs = []
     ys = []
     for x, y in test_loader:

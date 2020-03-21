@@ -333,7 +333,7 @@ if __name__=='__main__':
     test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True, num_workers=1)
 
     # Single time define the testing set. Keep it fixed until the end
-    X_test, y_test = build_test_set(test_loader)
+    X_test, y_test = build_test_set(test_loader, device)
 
     if FLAGS.dnn_hidden_units:
         dnn_hidden_units = FLAGS.dnn_hidden_units.split(",")
