@@ -134,12 +134,12 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, eval_
         mi_over_epoch['Y'] = np.array(mi_over_epoch['Y'])
 
         # Discard top and bottom 5% to avoid numerical outliers
-        tmp = mi_over_epoch['X'][mi_over_epoch['X'] < np.quantile(mi_over_epoch['X'], 0.95)]
-        tmp = tmp[tmp > np.quantile(mi_over_epoch['X'], 0.05)]
+        tmp = mi_over_epoch['X'][mi_over_epoch['X'] < np.quantile(mi_over_epoch['X'], 1 - mie_k_discard/100)]
+        tmp = tmp[tmp > np.quantile(mi_over_epoch['X'], mie_k_discard/100)]
         mi_over_epoch['X'] = tmp
 
-        tmp = mi_over_epoch['Y'][mi_over_epoch['Y'] < np.quantile(mi_over_epoch['Y'], 0.95)]
-        tmp = tmp[tmp > np.quantile(mi_over_epoch['Y'], 0.05)]
+        tmp = mi_over_epoch['Y'][mi_over_epoch['Y'] < np.quantile(mi_over_epoch['Y'], 1 - mie_k_discard/100)]
+        tmp = tmp[tmp > np.quantile(mi_over_epoch['Y'], mie_k_discard/100)]
         mi_over_epoch['Y'] = tmp
 
         if np.mean(mi_over_epoch['X']) > max_MI_x:
@@ -169,37 +169,47 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, eval_
             if epoch >= 30:
                 print('\nMean MI X for last 30', np.mean(mi_mean_est_all['X'][-30:]))
                 print('Mean MI Y for last 30', np.mean(mi_mean_est_all['Y'][-30:]))
+            if epoch >= w_size:
+                print('\nMean MI X for last %s - %s' % (w_size, np.mean(mi_mean_est_all['X'][-w_size:])))
+                print('Mean MI Y for last %s - %s' % (w_size, np.mean(mi_mean_est_all['Y'][-w_size:])))
             mi_df = pd.DataFrame.from_dict(mi_mean_est_all)
             if not os.path.exists(FLAGS.result_path+'/mie_values'):
                 os.makedirs(FLAGS.result_path+'/mie_values')
-            mi_df.to_csv(FLAGS.result_path+'/mie_values/mie_%s_%s_w%s_s%s.csv' % (enc_type.lower(), 'test' if mie_on_test else 'train', int(1/weight_decay) if weight_decay != 0 else 0, seed), sep=' ')
+            mi_df.to_csv(FLAGS.result_path+'/mie_values/mie_%s_%s__l%s_w%s_s%s.csv' % (enc_type.lower(), 'test' if mie_on_test else 'train', layer, int(1/weight_decay) if weight_decay != 0 else 0, seed), sep=' ')
             print('Max I_est(X, Z) - %s' % max_MI_x)
             print('Max I_est(Z, Y) - %s' % max_MI_y)
             print('Elapsed time training MI for %s: %s' % (layer, time.time() - start_time))
             print('#'*30,'\n')
 
-            if epoch >= 20 and np.mean(mi_mean_est_all['X'][-20:]) > max_MI_x - 1e-1 or epoch == num_epochs - 1:
-                if not os.path.exists(FLAGS.result_path+'/mie_curves'):
-                    os.makedirs(FLAGS.result_path+'/mie_curves')
-                plt.plot(np.arange(len(mi_df)), mi_df['X'], label='I(X,Z)')
-                plt.plot(np.arange(len(mi_df)), mi_df['Y'], label='I(Z,Y)')
-                plt.legend()
-                plt.savefig(FLAGS.result_path+'/mie_curves/mie_curve_%s_%s_w%s_s%s.png' % (enc_type.lower(), 'test' if mie_on_test else 'train', int(1/weight_decay) if weight_decay != 0 else 0, seed))
-                break
+            plot_mie_curve(FLAGS, mi_df, layer, seed)
+
+        # if epoch >= w_size and np.mean(mi_mean_est_all['X'][-w_size:]) > max_MI_x - 1e-1 or epoch == num_epochs - 1:
+        if epoch >= w_size and np.mean(mi_mean_est_all['X'][-w_size:]) > np.mean(mi_mean_est_all['X'][-2*w_size:-w_size]) - 5e-2 or epoch == num_epochs - 1:
+            plot_mie_curve(FLAGS, mi_df, layer, seed)
+            break
 
             
     return max_MI_x, max_MI_y, mi_estimator_X, mi_estimator_Y
 
 def build_information_plane(mi_values, layers_names, seeds):
     mi_df = pd.DataFrame.from_dict(mi_values)
+    print(mi_df)
     fig2, ax2 = plt.subplots(1, 1, sharex=True)
-    colors = ['black', 'blue', 'red', 'green', 'yellow']
-    for i in range(len(layers_names)):
-        for j in range(len(seeds)):
-            ax2.scatter(mi_df.loc[j, layers_names[i]][0], mi_df.loc[j, layers_names[i]][1], color=colors[i], label=layers_names[i])
-            
-            ax2.annotate(layers_names[i]+' (seed %d)' % seeds[i], (mi_df.loc[j, layers_names[i]][0], mi_df.loc[j, layers_names[i]][1]))
+    set_legend = True
+    if len(layers_names) < 8:
+        colors = ['black', 'blue', 'red', 'green', 'yellow', 'cyan', 'magenta']
+    else:
+        colors = [rand_color() for _ in range(len(layers_names))]
+    for i in range(len(seeds)):
+        for j in range(len(layers_names)):
+            if set_legend:
+                ax2.scatter(mi_df.loc[seeds[i], layers_names[j]][0], mi_df.loc[seeds[i], layers_names[j]][1], color=colors[j], label=layers_names[j])
+            else:
+                ax2.scatter(mi_df.loc[seeds[i], layers_names[j]][0], mi_df.loc[seeds[i], layers_names[j]][1], color=colors[j])
+            ax2.annotate('  seed %d' % seeds[i], (mi_df.loc[seeds[i], layers_names[j]][0], mi_df.loc[seeds[i], layers_names[j]][1]))
             ax2.grid()
+        set_legend = False
+
     ax2.set_xlabel('I(X, Z)')
     ax2.set_ylabel('I(Z, Y)')
 
@@ -208,6 +218,8 @@ def build_information_plane(mi_values, layers_names, seeds):
     if not os.path.exists(FLAGS.result_path+'/information_planes'):
         os.makedirs(FLAGS.result_path+'/information_planes')
     fig2.savefig(FLAGS.result_path+'/information_planes/info_plane_%s_%s_b%s_w%s.png' % (enc_type.lower(), 'test' if mie_on_test else 'train', mie_beta, int(1/weight_decay) if weight_decay != 0 else 0))
+
+
 
 def main():
 
@@ -233,11 +245,9 @@ def main():
     else:
         seeds = [default_seed]
 
-    mie_layers = {} 
+    mie_layers = {layer:{s:(np.nan, np.nan) for s in seeds} for layer in layers_names}
     start_time = time.time()
-
-    for layer in layers_names:
-        mie_layers[layer] = []
+        
 
     for i in range(len(seeds)):
 
@@ -247,19 +257,20 @@ def main():
         seed(seeds[i])
         
         
-        for layer in layers_names:
+        for j in range(len(layers_names)):
+            layer = layers_names[j]
             if enc_type == 'MLP':
                 MI_X, MI_Y, MIE_X, MIE_Y = train_MI(Encoder.models[layer], beta=mie_beta, mie_on_test=mie_on_test, seed=seeds[i], layer=layer, num_epochs=mie_num_epochs)
             else:
                 MI_X, MI_Y, MIE_X, MIE_Y = train_MI(Encoder, beta=mie_beta, mie_on_test=mie_on_test, seed=seeds[i], num_epochs=mie_num_epochs)
             if not os.path.exists(FLAGS.result_path+'/estimator_models'):
                 os.makedirs(FLAGS.result_path+'/estimator_models')
-            torch.save(MIE_X.state_dict(), FLAGS.result_path + '/estimator_models/mie_x_%s_%s_b%s_w%s_s%s.pt' % (enc_type.lower(), 'test' if mie_on_test else 'train', mie_beta, int(1/weight_decay) if weight_decay != 0 else 0, seeds[i]))
-            torch.save(MIE_Y.state_dict(), FLAGS.result_path + '/estimator_models/mie_y_%s_%s_b%s_w%s_s%s.pt' % (enc_type.lower(), 'test' if mie_on_test else 'train', mie_beta, int(1/weight_decay) if weight_decay != 0 else 0, seeds[i]))
-            mie_layers[layer].append((MI_X, MI_Y))
+            torch.save(MIE_X.state_dict(), FLAGS.result_path + '/estimator_models/mie_x_%s_%s_l%s_b%s_w%s_s%s.pt' % (enc_type.lower(), 'test' if mie_on_test else 'train', layer, mie_beta, int(1/weight_decay) if weight_decay != 0 else 0, seeds[i]))
+            torch.save(MIE_Y.state_dict(), FLAGS.result_path + '/estimator_models/mie_y_%s_%s_l%s_b%s_w%s_s%s.pt' % (enc_type.lower(), 'test' if mie_on_test else 'train', layer, mie_beta, int(1/weight_decay) if weight_decay != 0 else 0, seeds[i]))
+            mie_layers[layer][seeds[i]] = (MI_X, MI_Y)
             print('MI values for %s - %s, %s' % (layer, MI_X, MI_Y))
-    
-    build_information_plane(pd.DataFrame.from_dict(mie_layers), layers_names, seeds)
+            print(mie_layers)
+            build_information_plane(mie_layers, layers_names[:j+1], seeds[:i+1])
         
     print('Elapsed time - ', time.time() - start_time)
 
@@ -273,7 +284,7 @@ if __name__=='__main__':
                         help='Comma separated list of number of units in each hidden layer')
     parser.add_argument('--default_seed', type = int, default = 69,
                         help='Default seed for encoder training')
-    parser.add_argument('--seeds', type = str, default = '9,42,103',
+    parser.add_argument('--seeds', type = str, default = '69',
                         help='Comma separated list of random seeds')
     parser.add_argument('--layers_to_track', type = str, default = '1',
                         help='Comma separated list of inverse positions of encoding layers to evaluate (starting from 1)')
@@ -287,11 +298,13 @@ if __name__=='__main__':
                         help='Lagrangian multiplier representing prioirity of MI(z, y) over MI(x, z)')
     parser.add_argument('--mie_on_test', type = bool, default = False,
                         help='Whether to build MI estimator using training or test set')
+    parser.add_argument('--mie_k_discard', type = float, default = 5,
+                        help='Per cent of top and bottom MI estimations to discard')
     parser.add_argument('--weight_decay', type = float, default = 0,
                       help='Value of weight decay applied to optimizer')
     parser.add_argument('--num_epochs', type = int, default = 10,
                         help='Number of epochs to do training')
-    parser.add_argument('--mie_num_epochs', type = int, default = 2000,
+    parser.add_argument('--mie_num_epochs', type = int, default = 100,
                         help='Max number of epochs to do MIE training')
     parser.add_argument('--num_classes', type = int, default = 10,
                         help='Number of classes')
@@ -299,12 +312,18 @@ if __name__=='__main__':
                         help='Batch size to run trainer.')
     parser.add_argument('--eval_freq', type=int, default=1,
                             help='Frequency of evaluation on the test set')
+    parser.add_argument('--w_size', type=int, default=20,
+                            help='Window size to count towards convergence criteria')
     parser.add_argument('--neg_slope', type=float, default=0.02,
                         help='Negative slope parameter for LeakyReLU')
     parser.add_argument('--result_path', type = str, default = 'results_mie',
                       help='Directory for storing results')
+    parser.add_argument('--comment', type = str, default = '',
+                      help='Additional comments on the runtime set up')
 
     FLAGS, unparsed = parser.parse_known_args()
+
+    print_flags(FLAGS)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     cuda = torch.cuda.is_available()
@@ -321,6 +340,11 @@ if __name__=='__main__':
     mie_num_epochs = FLAGS.mie_num_epochs
     mie_beta = FLAGS.mie_beta
     mie_on_test = FLAGS.mie_on_test
+    mie_k_discard = FLAGS.mie_k_discard
+    w_size = FLAGS.w_size
+
+    if FLAGS.comment != '':
+        FLAGS.result_path += '/FLAGS.comment'
 
     np.random.seed(default_seed)
     torch.manual_seed(default_seed)

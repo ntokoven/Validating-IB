@@ -1,5 +1,7 @@
 import torch
 import numpy as np
+import matplotlib.pyplot as plt
+import os
 from collections import Counter, OrderedDict
 
 
@@ -43,8 +45,10 @@ def get_named_layers(net):
             linear_idx += 1
     return named_layers
 
-# Compute accuracy given prediction logit
 def accuracy(predictions, targets):
+    """
+    Compute accuracy given prediction logit
+    """
     if targets.ndimension() == 1:
         accuracy = (predictions.argmax(dim=1) == targets).type(torch.FloatTensor).mean().item()
     else:
@@ -53,6 +57,9 @@ def accuracy(predictions, targets):
 
 
 def build_test_set(test_loader, device):
+    """
+    Build training set given test data loader
+    """
     xs = []
     ys = []
     for x, y in test_loader:
@@ -64,6 +71,36 @@ def build_test_set(test_loader, device):
     
     X_test, y_test = torch.tensor(xs, requires_grad=False).flatten(start_dim=1).to(device), torch.tensor(ys, requires_grad=False).type(torch.LongTensor).to(device)
     return X_test, y_test
+
+def print_flags(flags):
+    """
+    Prints all entries in FLAGS variable.
+    """
+    for key, value in vars(flags).items():
+        print(key + ' : ' + str(value))
+
+def rand_color():
+    r = np.random.randint(0, 255)
+    return '#%02X%02X%02X' % (r(),r(),r())
+
+def plot_mie_curve(FLAGS, mi_df, layer, seed):
+    if not os.path.exists(FLAGS.result_path+'/mie_curves'):
+        os.makedirs(FLAGS.result_path+'/mie_curves')
+    if layer != '':
+        layer_info = ' - layer %s' % layer
+    else:
+        layer_info = ''
+    fig_c, ax_c = plt.subplots(1, 1, sharex=True)
+    ax_c.plot(np.arange(len(mi_df)), mi_df['X'], label='I(X,Z)%s' % layer_info)
+    ax_c.plot(np.arange(len(mi_df)), mi_df['Y'], label='I(Z,Y)%s' % layer_info)
+    
+    ax_c.set_xlabel('# of training steps')
+    ax_c.set_ylabel('MI Estimation')
+
+    fig_c.legend()
+    fig_c.set_size_inches(10, 7, forward=True)
+    fig_c.savefig(FLAGS.result_path+'/mie_curves/mie_curve_%s_%s_l%s_w%s_s%s.png' % (FLAGS.enc_type.lower(), 'test' if FLAGS.mie_on_test else 'train', layer, int(1/FLAGS.weight_decay) if FLAGS.weight_decay != 0 else 0, seed))
+
 
 
 ###############################################

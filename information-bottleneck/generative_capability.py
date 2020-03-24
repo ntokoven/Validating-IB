@@ -120,6 +120,13 @@ def abc_metric(best_performance, accuracy_over_labels, nums):
     area = polygon.area
     return area
 
+def print_flags():
+    """
+    Prints all entries in FLAGS variable.
+    """
+    for key, value in vars(FLAGS).items():
+        print(key + ' : ' + str(value))
+
 def main():
     
     Encoder = train_encoder(dnn_hidden_units, enc_type=enc_type, num_epochs=num_epochs, weight_decay=weight_decay)
@@ -212,6 +219,8 @@ if __name__ == '__main__':
                       help='Directory for storing results')
 
     FLAGS, unparsed = parser.parse_known_args()
+
+    print_flags()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     cuda = torch.cuda.is_available()
