@@ -97,7 +97,8 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, eval_
         use_scheduler = False
 
     start_time = time.time()
-    max_MI_x, max_MI_y = 0, 0
+    max_MI_x = max_MI_y = 0
+    train_x = train_y = True
     mi_mean_est_all = {'X': [], 'Y': []}
     
     for epoch in range(num_epochs):
@@ -172,6 +173,9 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, eval_
             if epoch >= w_size:
                 print('\nMean MI X for last %s - %s' % (w_size, np.mean(mi_mean_est_all['X'][-w_size:])))
                 print('Mean MI Y for last %s - %s' % (w_size, np.mean(mi_mean_est_all['Y'][-w_size:])))
+            if epoch >= 2*w_size:
+                print('Latest window mean value: ', np.mean(mi_mean_est_all['X'][-w_size:]))
+                print('Previous window mean value', np.mean(mi_mean_est_all['X'][-2*w_size:-w_size]))
             mi_df = pd.DataFrame.from_dict(mi_mean_est_all)
             if not os.path.exists(FLAGS.result_path+'/mie_values'):
                 os.makedirs(FLAGS.result_path+'/mie_values')
@@ -182,13 +186,20 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, eval_
             print('#'*30,'\n')
 
             plot_mie_curve(FLAGS, mi_df, layer, seed)
+        
 
         # if epoch >= w_size and np.mean(mi_mean_est_all['X'][-w_size:]) > max_MI_x - 1e-1 or epoch == num_epochs - 1:
-        if epoch >= w_size and np.mean(mi_mean_est_all['X'][-w_size:]) > np.mean(mi_mean_est_all['X'][-2*w_size:-w_size]) - 5e-2 or epoch == num_epochs - 1:
-            plot_mie_curve(FLAGS, mi_df, layer, seed)
-            break
+        if epoch >= w_size and np.mean(mi_mean_est_all['X'][-2*w_size:-w_size]) > np.mean(mi_mean_est_all['X'][-w_size:]) - mie_converg_bound or epoch == num_epochs - 1:
+            train_x = False
 
-            
+        if epoch >= w_size and np.mean(mi_mean_est_all['Y'][-2*w_size:-w_size]) > np.mean(mi_mean_est_all['Y'][-w_size:]) - mie_converg_bound or epoch == num_epochs - 1:
+            train_y = False
+        if not mie_train_till_end:
+            if train_x == False and train_y == False:
+                print('Convergence criteria successfully satisified')
+                break
+
+    plot_mie_curve(FLAGS, mi_df, layer, seed)            
     return max_MI_x, max_MI_y, mi_estimator_X, mi_estimator_Y
 
 def build_information_plane(mi_values, layers_names, seeds):
@@ -263,10 +274,13 @@ def main():
                 MI_X, MI_Y, MIE_X, MIE_Y = train_MI(Encoder.models[layer], beta=mie_beta, mie_on_test=mie_on_test, seed=seeds[i], layer=layer, num_epochs=mie_num_epochs)
             else:
                 MI_X, MI_Y, MIE_X, MIE_Y = train_MI(Encoder, beta=mie_beta, mie_on_test=mie_on_test, seed=seeds[i], num_epochs=mie_num_epochs)
-            if not os.path.exists(FLAGS.result_path+'/estimator_models'):
-                os.makedirs(FLAGS.result_path+'/estimator_models')
-            torch.save(MIE_X.state_dict(), FLAGS.result_path + '/estimator_models/mie_x_%s_%s_l%s_b%s_w%s_s%s.pt' % (enc_type.lower(), 'test' if mie_on_test else 'train', layer, mie_beta, int(1/weight_decay) if weight_decay != 0 else 0, seeds[i]))
-            torch.save(MIE_Y.state_dict(), FLAGS.result_path + '/estimator_models/mie_y_%s_%s_l%s_b%s_w%s_s%s.pt' % (enc_type.lower(), 'test' if mie_on_test else 'train', layer, mie_beta, int(1/weight_decay) if weight_decay != 0 else 0, seeds[i]))
+
+            if mie_save_models:
+                if not os.path.exists(FLAGS.result_path+'/estimator_models'):
+                    os.makedirs(FLAGS.result_path+'/estimator_models')
+                torch.save(MIE_X.state_dict(), FLAGS.result_path + '/estimator_models/mie_x_%s_%s_l%s_b%s_w%s_s%s.pt' % (enc_type.lower(), 'test' if mie_on_test else 'train', layer, mie_beta, int(1/weight_decay) if weight_decay != 0 else 0, seeds[i]))
+                torch.save(MIE_Y.state_dict(), FLAGS.result_path + '/estimator_models/mie_y_%s_%s_l%s_b%s_w%s_s%s.pt' % (enc_type.lower(), 'test' if mie_on_test else 'train', layer, mie_beta, int(1/weight_decay) if weight_decay != 0 else 0, seeds[i]))
+            
             mie_layers[layer][seeds[i]] = (MI_X, MI_Y)
             print('MI values for %s - %s, %s' % (layer, MI_X, MI_Y))
             print(mie_layers)
@@ -300,12 +314,18 @@ if __name__=='__main__':
                         help='Whether to build MI estimator using training or test set')
     parser.add_argument('--mie_k_discard', type = float, default = 5,
                         help='Per cent of top and bottom MI estimations to discard')
+    parser.add_argument('--mie_converg_bound', type = float, default = 5e-2,
+                        help='Tightness of bound for the convergence criteria')
     parser.add_argument('--weight_decay', type = float, default = 0,
                       help='Value of weight decay applied to optimizer')
     parser.add_argument('--num_epochs', type = int, default = 10,
                         help='Number of epochs to do training')
     parser.add_argument('--mie_num_epochs', type = int, default = 100,
                         help='Max number of epochs to do MIE training')
+    parser.add_argument('--mie_save_models', type = bool, default = False,
+                      help='Need to store MIE models learnt')
+    parser.add_argument('--mie_train_till_end', type = bool, default = False,
+                      help='Need to train for mie_num_epochs or convergence')
     parser.add_argument('--num_classes', type = int, default = 10,
                         help='Number of classes')
     parser.add_argument('--batch_size', type = int, default = 64,
@@ -318,12 +338,16 @@ if __name__=='__main__':
                         help='Negative slope parameter for LeakyReLU')
     parser.add_argument('--result_path', type = str, default = 'results_mie',
                       help='Directory for storing results')
+                    
+    
     parser.add_argument('--comment', type = str, default = '',
                       help='Additional comments on the runtime set up')
 
     FLAGS, unparsed = parser.parse_known_args()
 
     print_flags(FLAGS)
+
+    global_start_time = time.time()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     cuda = torch.cuda.is_available()
@@ -341,6 +365,9 @@ if __name__=='__main__':
     mie_beta = FLAGS.mie_beta
     mie_on_test = FLAGS.mie_on_test
     mie_k_discard = FLAGS.mie_k_discard
+    mie_train_till_end = FLAGS.mie_train_till_end
+    mie_converg_bound = FLAGS.mie_converg_bound
+    mie_save_models = FLAGS.mie_save_models
     w_size = FLAGS.w_size
 
     if FLAGS.comment != '':
@@ -371,3 +398,6 @@ if __name__=='__main__':
     dnn_output_units = num_classes
 
     main()
+
+    print('Excecution finished with overall time elapsed - %s' % (time.time() - global_start_time))
+    print_flags(FLAGS)
