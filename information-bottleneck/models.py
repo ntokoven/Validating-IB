@@ -25,26 +25,28 @@ class MIEstimator(nn.Module):
         return -softplus(-pos).mean() - softplus(neg).mean(), pos.mean() - neg.exp().mean() + 1
 
 class MLP(nn.Module):
-    def __init__(self, n_inputs, n_hidden, n_classes, neg_slope=0.02):
+    def __init__(self, n_inputs, n_hidden, n_classes, neg_slope=0.02, dropout=False, p_dropout=0.5):
         super(MLP, self).__init__()
-        self.n_inputs = n_inputs,
-        self.n_hidden = n_hidden,
+        self.n_inputs = n_inputs
+        self.n_hidden = n_hidden
         self.n_classes = n_classes
         
         self.layers = []
         self.num_neurons = [n_inputs] + n_hidden + [n_classes]
         self.best_performance = 0
         self.models = {}
+        if dropout:
+            print('Applying dropout with p=%s' % p_dropout)
         for i in range(len(self.num_neurons) - 2):
             self.layers.append(nn.Linear(self.num_neurons[i], self.num_neurons[i+1]))
+            if dropout:
+                self.layers.append(nn.Dropout(p_dropout))
             self.layers.append(nn.LeakyReLU(negative_slope=neg_slope))
             self.models['Linear{}'.format(i)] = nn.Sequential(*self.layers)
-            
 
         self.layers.append(nn.Linear(self.num_neurons[i+1], self.num_neurons[i+2]))
         self.models['Output'] = nn.Sequential(*self.layers)
         self.full_model = self.models['Output']
-        
         
         
     def forward(self, x, exitLayer=None): 

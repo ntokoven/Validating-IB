@@ -19,6 +19,12 @@ from evaluation import *
 from helper import *
 from models import VAE, MLP, MIEstimator
 
+'''
+
+TODO: ADD ALL THE CHANGES AS IN THE build_mie.py FILE
+
+'''
+
 
 def train_encoder(dnn_hidden_units, dnn_input_units=784, dnn_output_units=10, z_dim = 6, enc_type='MLP', weight_decay=0, num_epochs=10, eval_freq=1):
     print('Weight decay to be applied: ', weight_decay)
