@@ -19,13 +19,14 @@ from helper import *
 from models import VAE, MLP, MIEstimator
 
 
-def train_encoder(dnn_hidden_units, dnn_input_units=784, dnn_output_units=10, z_dim = 6, enc_type='MLP', weight_decay=0, num_epochs=10, eval_freq=1, dropout=False, p_dropout=0.5):
+def train_encoder(dnn_hidden_units, dnn_input_units=784, dnn_output_units=10, enc_type='MLP', weight_decay=0, num_epochs=10, eval_freq=1, dropout=False, p_dropout=0.5):
     print('Weight decay to be applied: ', weight_decay)
-    print('train_encoder p_dropout %s' % p_dropout)
+    if dropout:
+        print('train_encoder p_dropout %s' % p_dropout)
     if enc_type == 'MLP':
-        Net = MLP(dnn_input_units, dnn_hidden_units, dnn_output_units, dropout=dropout, p_dropout=p_dropout).to(device)
+        Net = MLP(dnn_input_units, dnn_hidden_units, dnn_output_units, FLAGS, neg_slope=FLAGS.neg_slope, dropout=dropout, p_dropout=p_dropout).to(device)
     elif enc_type =='VAE':
-        Net = VAE(dnn_input_units, dnn_output_units, z_dim).to(device)
+        Net = VAE(dnn_input_units, dnn_output_units, dnn_hidden_units[-1]).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(Net.parameters(), lr=learning_rate, weight_decay=weight_decay) #default 1e-3
 
@@ -68,6 +69,57 @@ def train_encoder(dnn_hidden_units, dnn_input_units=784, dnn_output_units=10, z_
     Net.best_performance = max_accuracy
     return Net
 
+def train_encoder_VIB(dnn_hidden_units, dnn_input_units=784, dnn_output_units=10, enc_type='MLP', num_epochs=10, eval_freq=1):
+    
+    Net = VAE(dnn_input_units, dnn_output_units, dnn_hidden_units[-1]).to(device)
+    
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(Net.parameters(),lr=1e-4,betas=(0.5,0.999))
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer,gamma=0.97)
+    
+    start_time = time.time()
+    max_accuracy = 0
+    beta = FLAGS.vib_beta
+    for epoch in range(num_epochs):
+        for X_train, y_train in train_loader:
+            # beta = scheduler(epoch)
+            
+            X_train, y_train = X_train.flatten(start_dim=1).to(device), y_train.to(device)
+            optimizer.zero_grad()
+            (mu, std), out, z_train = Net(X_train)
+            
+            class_loss = criterion(out, y_train).div(math.log(2)) #make log of base 2
+            info_loss = -0.5 * (1 + 2 * std.log() - mu.pow(2) - std.pow(2)).sum(1).mean().div(math.log(2))
+            total_loss = class_loss + beta * info_loss
+
+            izy_bound = math.log(10,2) - class_loss
+            izx_bound = info_loss
+
+            total_loss.backward()
+            optimizer.step()
+        if epoch % eval_freq == 0 or epoch == num_epochs - 1:
+
+                print('\n'+'#'*30)
+                print('Training epoch - %d/%d' % (epoch+1, num_epochs))
+
+                (mu, std), out_test, z_test = Net(X_test)
+                test_class_loss = criterion(out, y_train).div(math.log(2)) #make log of base 2
+                test_info_loss = -0.5 * (1 + 2 * std.log() - mu.pow(2) - std.pow(2)).sum(1).mean().div(math.log(2))
+                test_total_loss = test_class_loss + beta * test_info_loss
+                test_accuracy = accuracy(out_test, y_test)
+                if test_accuracy > max_accuracy:
+                    max_accuracy = test_accuracy
+
+                print('Train: Accuracy - %0.3f, Loss - %0.3f' % (accuracy(out, y_train), total_loss))
+                print('Test: Accuracy - %0.3f, Loss - %0.3f' % (test_accuracy, test_total_loss))
+                print('Upperbound I(X, T)', izx_bound.item())
+                print('Lowerbound I(T, Y)', izy_bound.item())
+                print('Elapsed time: ', time.time() - start_time)
+                print('#'*30,'\n')
+                if test_accuracy == 1 and test_total_loss == 0:
+                    break
+    Net.best_performance = max_accuracy
+    return Net
 
 def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, eval_freq=1, layer=''):
     
@@ -203,165 +255,12 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, eval_
     plot_mie_curve(FLAGS, mi_df, layer, seed)            
     return max_MI_x, max_MI_y, mi_estimator_X, mi_estimator_Y
 
-
-
-def train_VIB(X_train, Y_train, X_test, Y_test, load=False):
-    t_names = ['Linear0', 'Linear1', 'Linear2', 'Linear3']
-    mi_xt_all = []; mi_ty_all = []; epochs = []
-    mi_xz = []; mi_zy = []
-    
-    # MLP_object = MLP(dnn_input_units, dnn_hidden_units, dnn_output_units).to(device)
-    # mi_estimator_X = MIEstimator(x_dim, z_dim).to(device)
-    # mi_estimator_Y = MIEstimator(z_dim, y_dim).to(device)
-    # print(get_named_layers(MLP_object))
-    
-
-
-
-    # criterion = nn.CrossEntropyLoss()
-    
-    #optimizer = optim.SGD(MLP_object.parameters(), lr=0.1)#, momentum=0.2)
-
-#     optimizer_D = Adam([
-#     {'params': MLP_object.parameters(), 'lr':1e-2},
-# #     {'params': encoder_v_2.parameters(), 'lr':1e-4}, # There is only one encoder in this example
-#     ])
-#     optimizer_G = Adam([
-#     {'params': mi_estimator_X.parameters(), 'lr':1e-4},
-#     #{'params': mi_estimator_Y.parameters(), 'lr':1e-4},
-# ])
-    
-    
-    VaMI = VAE(z_dim).to(device)
-    if load == True:
-      print('Downloading pre-trained model')
-      VaMI.load_state_dict(torch.load('vib_mi.pt'))
-    else:
-      print('Initializing very new MI estimator')
-      VaMI.weight_init()
-
-    optimizer = optim.Adam(VaMI.parameters(),lr=1e-2,betas=(0.5,0.999))
-    scheduler = optim.lr_scheduler.ExponentialLR(optimizer,gamma=0.97)
-    
-    accuracy_evaluation = {'train': [], 'test': []}
-    loss_evaluation = {'train': [], 'test': []}
-    start_time = time.time()
-    for epoch in range(num_epochs):
-        beta = beta_scheduler(epoch)
-        '''
-
-        encoding = get_hidden_layers(MLP_object, t_names, X_train)
-        print(len(encoding))
-        
-        optimizer_D.zero_grad()
-        out =  MLP_object(X_train.float())
-        # mi_gradient_X, mi_estimation_X = mi_estimator_X(X_train, encoding[-1])
-        # mi_gradient_X = mi_gradient_X.mean()
-        # mi_estimation_X = mi_estimation_X.mean()
-
-        loss = criterion(out, Y_train.argmax(dim=1))# - beta * mi_gradient_X
-        loss.backward()
-        optimizer_D.step()
-
-        optimizer_G.zero_grad()
-        mi_gradient_X, mi_estimation_X = mi_estimator_X(X_train, encoding[-1])
-        mi_gradient_X = mi_gradient_X.mean()
-        mi_estimation_X = mi_estimation_X.mean()
-
-        mi_gradient_Y, mi_estimation_Y = mi_estimator_Y(encoding[-1], Y_train.float())
-        mi_gradient_Y = mi_gradient_Y.mean()
-        mi_estimation_Y = mi_estimation_Y.mean()
-                
-        loss_mi = beta * mi_gradient_X - (1- beta) * mi_gradient_Y
-        loss_mi.backward()
-        optimizer_G.step()
-        '''
-
-
-        (mu, std), logit = VaMI(X_train)
-        
-        class_loss = F.cross_entropy(logit, Y_train.argmax(dim=1)).div(math.log(2))
-        info_loss = -0.5 * (1 + 2 * std.log() - mu.pow(2) - std.pow(2)).sum(1).mean().div(math.log(2))
-        total_loss = class_loss + beta * info_loss
-
-        izy_bound = math.log(10,2) - class_loss
-        izx_bound = info_loss
-
-        optimizer.zero_grad()
-        total_loss.backward()
-        optimizer.step()
-        # self.toynet_ema.update(self.toynet.state_dict())
-
-        prediction = F.softmax(logit,dim=1).max(1)[1]
-        accuracy = torch.eq(prediction,Y_train.argmax(1)).float().mean()
-
-        z_samples = torch.randn(z_dim).to(device) * std + mu
-        torch.save(VaMI.state_dict(), 'vib_mi.pt')
-            
-        eval_freq = 1
-        if epoch % eval_freq == 0 or epoch == num_epochs - 1:
-            mi_xt, mi_ty = get_mutual_information(z_samples.cpu().data.numpy())
-            mi_xt_all.append(mi_xt)
-            mi_ty_all.append(mi_ty)
-            mi_xz.append(izx_bound.item())
-            mi_zy.append(izy_bound.item())
-            
-            epochs.append(epoch)
-            accuracy_evaluation['train'].append(accuracy)
-            #accuracy_evaluation['test'].append(accuracy(MLP_object(X_test), y_test))
-            #loss_evaluation['train'].append(loss)
-            #loss_evaluation['test'].append(criterion(MLP_object(X_test), Y_test.argmax(dim=1)))
-            print('#'*30)
-            print('Step - ', epoch)
-            print('Beta - ', beta)
-            print('Train: Accuracy - %0.3f, Loss - %0.3f' % (accuracy, total_loss))#(accuracy(out, Y_train), loss))
-            # print('Test: Accuracy - %0.3f, Loss - %0.3f' % (accuracy(MLP_object(X_test), Y_test), criterion(MLP_object(X_test), Y_test.argmax(dim=1))))
-            print('I(X, T) - ', mi_xt)
-            print('I(T, Y) - ', mi_ty)
-            # print('I_est(X, T)', mi_estimation_X)
-            # print('Grad I_est(X, T)', mi_gradient_X)
-            # print('I_est(T, Y)', mi_estimation_Y)
-            # print('Grad I_est(T, Y)', mi_gradient_Y)
-            print('I_est(X, T)', izx_bound.item())
-            print('I_est(T, Y)', izy_bound.item())
-            print('Time running: ', time.time() - start_time)
-            print('#'*30,'\n')
-    
-    return np.array(mi_xt_all), np.array(mi_ty_all), np.array(epochs), mi_xz, mi_zy, accuracy_evaluation['train']
-
-def build_information_plane(mi_values, layers_names, seeds):
-    mi_df = pd.DataFrame.from_dict(mi_values)
-    print(mi_df)
-    fig2, ax2 = plt.subplots(1, 1, sharex=True)
-    set_legend = True
-    if len(layers_names) < 8:
-        colors = ['black', 'blue', 'red', 'green', 'yellow', 'cyan', 'magenta']
-    else:
-        colors = [rand_color() for _ in range(len(layers_names))]
-    for i in range(len(seeds)):
-        for j in range(len(layers_names)):
-            if set_legend:
-                ax2.scatter(mi_df.loc[seeds[i], layers_names[j]][0], mi_df.loc[seeds[i], layers_names[j]][1], color=colors[j], label=layers_names[j])
-            else:
-                ax2.scatter(mi_df.loc[seeds[i], layers_names[j]][0], mi_df.loc[seeds[i], layers_names[j]][1], color=colors[j])
-            ax2.annotate('  seed %d' % seeds[i], (mi_df.loc[seeds[i], layers_names[j]][0], mi_df.loc[seeds[i], layers_names[j]][1]))
-            ax2.grid()
-        set_legend = False
-
-    ax2.set_xlabel('I(X, Z)')
-    ax2.set_ylabel('I(Z, Y)')
-
-    fig2.legend()
-    fig2.set_size_inches(10, 7, forward=True)
-    if not os.path.exists(FLAGS.result_path+'/information_planes'):
-        os.makedirs(FLAGS.result_path+'/information_planes')
-    fig2.savefig(FLAGS.result_path+'/information_planes/info_plane_%s_%s_b%s_w%s.png' % (enc_type.lower(), 'test' if mie_on_test else 'train', mie_beta, int(1/weight_decay) if weight_decay != 0 else 0))
-
-
-
 def main():
     print('main p_dropout %s' % p_dropout)
-    Encoder = train_encoder(dnn_hidden_units, enc_type=enc_type, num_epochs=num_epochs, weight_decay=weight_decay, dropout=dropout, p_dropout=p_dropout)
+    if FLAGS.use_of_vib:
+        Encoder = train_encoder_VIB(dnn_hidden_units, enc_type=enc_type, num_epochs=num_epochs)
+    else:
+        Encoder = train_encoder(dnn_hidden_units, enc_type=enc_type, num_epochs=num_epochs, weight_decay=weight_decay, dropout=dropout, p_dropout=p_dropout)
     print('Best achieved performance: ', Encoder.best_performance)
     print(Encoder)
 
@@ -411,7 +310,7 @@ def main():
             mie_layers[layer][seeds[i]] = (MI_X, MI_Y)
             print('MI values for %s - %s, %s' % (layer, MI_X, MI_Y))
             print(mie_layers)
-            build_information_plane(mie_layers, layers_names[:j+1], seeds[:i+1])
+            build_information_plane(mie_layers, layers_names[:j+1], seeds[:i+1], FLAGS)
         
     print('Elapsed time - ', time.time() - start_time)
 
@@ -424,6 +323,10 @@ if __name__=='__main__':
     parser.add_argument('--dropout', type = bool, default = False,
                         help='Apply dropout after each layer of encoder')
     parser.add_argument('--p_dropout', type = float, default = 0.5,
+                        help='Probability of dropout')
+    parser.add_argument('--input_dropout', type = bool, default = False,
+                        help='Apply dropout to the input layer of encoder')
+    parser.add_argument('--p_input_dropout', type = float, default = 0.8,
                         help='Probability of dropout')
     parser.add_argument('--dnn_hidden_units', type = str, default = '1024,512,256,128,64',
                         help='Comma separated list of number of units in each hidden layer')
@@ -441,6 +344,11 @@ if __name__=='__main__':
                         help='Learning rate for estimation of mutual information with target')
     parser.add_argument('--mie_beta', type = float, default = 1,
                         help='Lagrangian multiplier representing prioirity of MI(z, y) over MI(x, z)')
+    parser.add_argument('--vib_beta', type = float, default = 1e-3,
+                        help='Lagrangian multiplier representing prioirity of MI(z, y) over MI(x, z)')
+    parser.add_argument('--use_of_vib', type = bool, default = False,
+                        help='Need to train using Variational Information Bottleneck objective')
+    
     parser.add_argument('--mie_on_test', type = bool, default = False,
                         help='Whether to build MI estimator using training or test set')
     parser.add_argument('--mie_k_discard', type = float, default = 5,
@@ -502,6 +410,9 @@ if __name__=='__main__':
     mie_converg_bound = FLAGS.mie_converg_bound
     mie_save_models = FLAGS.mie_save_models
     w_size = FLAGS.w_size
+
+    if FLAGS.use_of_vib:
+        enc_type = FLAGS.enc_type = 'VAE'
 
     if FLAGS.comment != '':
         FLAGS.result_path += '/FLAGS.comment'

@@ -101,6 +101,34 @@ def plot_mie_curve(FLAGS, mi_df, layer, seed):
     fig_c.set_size_inches(10, 7, forward=True)
     fig_c.savefig(FLAGS.result_path+'/mie_curves/mie_curve_%s_%s_l%s_w%s_s%s.png' % (FLAGS.enc_type.lower(), 'test' if FLAGS.mie_on_test else 'train', layer, int(1/FLAGS.weight_decay) if FLAGS.weight_decay != 0 else 0, seed))
 
+def build_information_plane(mi_values, layers_names, seeds, FLAGS):
+    mi_df = pd.DataFrame.from_dict(mi_values)
+    print(mi_df)
+    fig2, ax2 = plt.subplots(1, 1, sharex=True)
+    set_legend = True
+    if len(layers_names) < 8:
+        colors = ['black', 'blue', 'red', 'green', 'yellow', 'cyan', 'magenta']
+    else:
+        colors = [rand_color() for _ in range(len(layers_names))]
+    for i in range(len(seeds)):
+        for j in range(len(layers_names)):
+            if set_legend:
+                ax2.scatter(mi_df.loc[seeds[i], layers_names[j]][0], mi_df.loc[seeds[i], layers_names[j]][1], color=colors[j], label=layers_names[j])
+            else:
+                ax2.scatter(mi_df.loc[seeds[i], layers_names[j]][0], mi_df.loc[seeds[i], layers_names[j]][1], color=colors[j])
+            ax2.annotate('  seed %d' % seeds[i], (mi_df.loc[seeds[i], layers_names[j]][0], mi_df.loc[seeds[i], layers_names[j]][1]))
+            ax2.grid()
+        set_legend = False
+
+    ax2.set_xlabel('I(X, Z)')
+    ax2.set_ylabel('I(Z, Y)')
+
+    fig2.legend()
+    fig2.set_size_inches(10, 7, forward=True)
+    if not os.path.exists(FLAGS.result_path+'/information_planes'):
+        os.makedirs(FLAGS.result_path+'/information_planes')
+    fig2.savefig(FLAGS.result_path+'/information_planes/info_plane_%s_%s_b%s_w%s.png' % (enc_type.lower(), 'test' if mie_on_test else 'train', mie_beta, int(1/weight_decay) if weight_decay != 0 else 0))
+
 
 
 ###############################################
