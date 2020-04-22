@@ -56,6 +56,9 @@ def train_and_evaluate_linear_model(train_set, test_set, solver='saga', multi_cl
     x_train, y_train = build_matrix(train_set)
     x_test, y_test = build_matrix(test_set)
 
+    x_train, y_train = np.nan_to_num(x_train), np.nan_to_num(y_train)
+    x_test, y_test = np.nan_to_num(x_test), np.nan_to_num(y_test)
+
     x_train = scaler.fit_transform(x_train)
     x_test = scaler.transform(x_test)
 

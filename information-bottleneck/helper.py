@@ -1,9 +1,11 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 import os
+import re
 from collections import Counter, OrderedDict
-
+from shapely.geometry import Polygon
 
 # Map integer labels to onehot encoding
 def onehot_encoding(x, num_classes=10):
@@ -11,6 +13,22 @@ def onehot_encoding(x, num_classes=10):
     x_onehot.zero_()
     x_onehot.scatter_(1, x.view(x.shape[0], 1), 1)
     return x_onehot
+
+def whitening(x, batch_dim=0):
+    # Normalize distribution of the input with respect to the batch dimension
+    mean = x.mean(dim=batch_dim)
+    std = x.std(dim=batch_dim)
+    x = (x - mean) / std
+    # NaN values might occur if certain dimension always takes 0 value for all examples in the batch, so std is 0 as well
+    x[x != x] = 0 
+    return x
+
+def concat(names_list):
+    names_as_strings = ['%s_' % l for l in names_list[:-1]] + ['%s' % names_list[-1]]
+    s = ''
+    for name in names_as_strings:
+        s += name
+    return s
 
 # Determine the architecture of encoder
 def get_named_layers(net):
@@ -55,6 +73,25 @@ def accuracy(predictions, targets):
         accuracy = (predictions.argmax(dim=1) == targets.argmax(dim=1)).type(torch.FloatTensor).mean().item()
     return accuracy
 
+def abc_metric(best_performance, accuracy_over_labels, nums):
+    perf = best_performance * np.ones(len(nums))
+    x_y_curve1 = [(np.log10(nums)[i], accuracy_over_labels[i]) for i in range(len(nums))]
+    x_y_curve2 = [(np.log10(nums)[i], perf[i]) for i in range(len(nums))] 
+
+    polygon_points = [] #creates an empty list where we will append the points to create the polygon
+
+    for xyvalue in x_y_curve1:
+        polygon_points.append([xyvalue[0],xyvalue[1]]) #append all xy points for curve 1
+
+    for xyvalue in x_y_curve2[::-1]:
+        polygon_points.append([xyvalue[0],xyvalue[1]]) #append all xy points for curve 2 in the reverse order (from last point to first point)
+
+    for xyvalue in x_y_curve1[0:1]:
+        polygon_points.append([xyvalue[0],xyvalue[1]]) #append the first point in curve 1 again, to it "closes" the polygon
+
+    polygon = Polygon(polygon_points)
+    area = polygon.area
+    return area
 
 def build_test_set(test_loader, device):
     """
@@ -69,53 +106,114 @@ def build_test_set(test_loader, device):
     xs = torch.cat(xs, 0)
     ys = torch.cat(ys, 0)
     
-    X_test, y_test = torch.tensor(xs, requires_grad=False).flatten(start_dim=1).to(device), torch.tensor(ys, requires_grad=False).type(torch.LongTensor).to(device)
+    X_test, y_test = xs.clone().detach().flatten(start_dim=1).to(device), ys.clone().detach().type(torch.LongTensor).to(device)
     return X_test, y_test
+
 
 def print_flags(flags):
     """
     Prints all entries in FLAGS variable.
     """
+    print('\n'+'-'*30)
     for key, value in vars(flags).items():
         print(key + ' : ' + str(value))
+    print('-'*30, '\n')
+
 
 def rand_color():
     r = np.random.randint(0, 255)
     return '#%02X%02X%02X' % (r(),r(),r())
 
+def get_colors(num):
+    def rand_color():
+        r = np.random.randint(0, 255)
+        return '#%02X%02X%02X' % (r(),r(),r())
+
+    if num < 8:
+        colors = ['black', 'blue', 'red', 'green', 'yellow', 'cyan', 'magenta']
+    else:
+        colors = [rand_color() for _ in range(num)]
+    return colors
+
+def get_info(FLAGS):
+    info = ''
+    if FLAGS.use_of_vib:
+        info += 'VIB beta = %s' % FLAGS.vib_beta
+    elif FLAGS.enc_type == 'VAE':
+        info += 'VAE'
+    else:
+        info += 'MLP'
+    if FLAGS.p_dropout != 0:
+        info += ' dout = %s' % FLAGS.p_dropout
+    if FLAGS.weight_decay != 0:
+        info += ' wd = %s' % FLAGS.weight_decay
+    return info
+
+def plot_acc_numlabels(FLAGS, acc_df, layers_names, best_performance, num_labels_range):
+    
+    fig1, ax = plt.subplots(len(layers_names), 1, sharex=True)
+    nums = np.array(num_labels_range)/FLAGS.num_classes
+    colors = get_colors(len(layers_names))
+
+    mean = lambda x: np.mean(x)
+    std = lambda x: np.std(x)
+
+    for i in range(len(layers_names)):
+        means = acc_df[layers_names[i]].apply(mean)
+        stds = acc_df[layers_names[i]].apply(std)
+        metric_value = abc_metric(best_performance, acc_df[layers_names[i]].apply(mean).to_numpy(), nums)
+        if len(layers_names) != 1:
+            tx = ax[i]
+        else:
+            tx = ax
+        tx.plot(np.log10(nums), means, color=colors[i], label=layers_names[i]+' + %s => ABC=%0.5f' % (get_info(FLAGS), metric_value))
+        tx.plot(np.log10(nums), best_performance * np.ones(len(nums)))
+        tx.fill_between(np.log10(nums), means - stds, means + stds, facecolor=colors[i], interpolate=True, alpha=0.25)
+        tx.grid()
+        # tx.set_ylim((np.min(acc_df.min().min()), 1))
+        tx.set_ylim((0, 1))
+
+    tx.set_xlabel('# Labels per class (log10)')
+    tx.set_ylabel('Accuracy')
+
+    fig1.legend()
+    fig1.set_size_inches(10, 7, forward=True)
+    if not os.path.exists(FLAGS.result_path):
+          os.makedirs(FLAGS.result_path)
+    fig1.savefig(FLAGS.result_path+'/acc_numlabels.png')
+    plt.close(fig1)
+
 def plot_mie_curve(FLAGS, mi_df, layer, seed):
     if not os.path.exists(FLAGS.result_path+'/mie_curves'):
         os.makedirs(FLAGS.result_path+'/mie_curves')
     if layer != '':
-        layer_info = ' - layer %s' % layer
+        layer_info = ' - layer %s, enc %s' % (layer, FLAGS.enc_type)
     else:
         layer_info = ''
-    fig_c, ax_c = plt.subplots(1, 1, sharex=True)
-    ax_c.plot(np.arange(len(mi_df)), mi_df['X'], label='I(X,Z)%s' % layer_info)
-    ax_c.plot(np.arange(len(mi_df)), mi_df['Y'], label='I(Z,Y)%s' % layer_info)
+    fig, ax = plt.subplots(1, 1, sharex=True)
+    ax.plot(np.arange(len(mi_df)), mi_df['X'], label='I(X,Z)%s' % layer_info)
+    ax.plot(np.arange(len(mi_df)), mi_df['Y'], label='I(Z,Y)%s' % layer_info)
     
-    ax_c.set_xlabel('# of training steps')
-    ax_c.set_ylabel('MI Estimation')
+    ax.set_xlabel('# of training steps')
+    ax.set_ylabel('MI Estimation')
 
-    fig_c.legend()
-    fig_c.set_size_inches(10, 7, forward=True)
-    fig_c.savefig(FLAGS.result_path+'/mie_curves/mie_curve_%s_%s_l%s_w%s_s%s.png' % (FLAGS.enc_type.lower(), 'test' if FLAGS.mie_on_test else 'train', layer, int(1/FLAGS.weight_decay) if FLAGS.weight_decay != 0 else 0, seed))
+    fig.legend()
+    fig.set_size_inches(10, 7, forward=True)
+    fig.savefig(FLAGS.result_path+'/mie_curves/mie_curve_%s_%s_l%s_s%s.png' % (FLAGS.enc_type.lower(), 'test' if FLAGS.mie_on_test else 'train', layer, seed))
+    plt.close(fig)
 
 def build_information_plane(mi_values, layers_names, seeds, FLAGS):
     mi_df = pd.DataFrame.from_dict(mi_values)
-    print(mi_df)
     fig2, ax2 = plt.subplots(1, 1, sharex=True)
     set_legend = True
-    if len(layers_names) < 8:
-        colors = ['black', 'blue', 'red', 'green', 'yellow', 'cyan', 'magenta']
-    else:
-        colors = [rand_color() for _ in range(len(layers_names))]
+    colors = get_colors(len(layers_names))
     for i in range(len(seeds)):
         for j in range(len(layers_names)):
+            layer_num = int(re.sub(r"\D", "", layers_names[j]))
             if set_legend:
-                ax2.scatter(mi_df.loc[seeds[i], layers_names[j]][0], mi_df.loc[seeds[i], layers_names[j]][1], color=colors[j], label=layers_names[j])
+                ax2.scatter(mi_df.loc[seeds[i], layers_names[j]][0], mi_df.loc[seeds[i], layers_names[j]][1], color=colors[layer_num], label=layers_names[j])
             else:
-                ax2.scatter(mi_df.loc[seeds[i], layers_names[j]][0], mi_df.loc[seeds[i], layers_names[j]][1], color=colors[j])
+                ax2.scatter(mi_df.loc[seeds[i], layers_names[j]][0], mi_df.loc[seeds[i], layers_names[j]][1], color=colors[layer_num])
             ax2.annotate('  seed %d' % seeds[i], (mi_df.loc[seeds[i], layers_names[j]][0], mi_df.loc[seeds[i], layers_names[j]][1]))
             ax2.grid()
         set_legend = False
@@ -127,8 +225,8 @@ def build_information_plane(mi_values, layers_names, seeds, FLAGS):
     fig2.set_size_inches(10, 7, forward=True)
     if not os.path.exists(FLAGS.result_path+'/information_planes'):
         os.makedirs(FLAGS.result_path+'/information_planes')
-    fig2.savefig(FLAGS.result_path+'/information_planes/info_plane_%s_%s_b%s_w%s.png' % (enc_type.lower(), 'test' if mie_on_test else 'train', mie_beta, int(1/weight_decay) if weight_decay != 0 else 0))
-
+    fig2.savefig(FLAGS.result_path+'/information_planes/info_plane_%s_%s.png' % (FLAGS.enc_type.lower(), 'test' if FLAGS.mie_on_test else 'train'))
+    plt.close(fig2)
 
 
 ###############################################

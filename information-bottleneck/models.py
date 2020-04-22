@@ -26,11 +26,13 @@ class MIEstimator(nn.Module):
         return -softplus(-pos).mean() - softplus(neg).mean(), pos.mean() - neg.exp().mean() + 1
 
 class MLP(nn.Module):
-    def __init__(self, n_inputs, n_hidden, n_classes, FLAGS, neg_slope=0.02, dropout=False, p_dropout=0.5):
+    def __init__(self, n_inputs, n_hidden, n_classes, FLAGS):
         super(MLP, self).__init__()
         self.n_inputs = n_inputs
         self.n_hidden = n_hidden
         self.n_classes = n_classes
+
+        p_dropout, neg_slope = FLAGS.p_dropout, FLAGS.neg_slope
         
         self.layers = []
         self.num_neurons = [n_inputs] + n_hidden + [n_classes]
@@ -39,13 +41,11 @@ class MLP(nn.Module):
 
         for i in range(len(self.num_neurons) - 2):
             self.layers.append(nn.Linear(self.num_neurons[i], self.num_neurons[i+1]))
-            if dropout:
-                print('Applying dropout with p=%s' % p_dropout)
+            if p_dropout != 0:
                 self.layers.append(nn.Dropout(p_dropout))
-            self.layers.append(nn.LeakyReLU(negative_slope=neg_slope))
+            self.layers.append(nn.LeakyReLU(negative_slope=FLAGS.neg_slope))
             self.models['Linear{}'.format(i)] = nn.Sequential(*self.layers)
-        if dropout:
-            print('Applying dropout with p=%s' % p_dropout)
+        if p_dropout != 0:
             self.layers.append(nn.Dropout(p_dropout))
         self.layers.append(nn.Linear(self.num_neurons[i+1], self.num_neurons[i+2]))
 
@@ -62,20 +62,22 @@ class MLP(nn.Module):
 
 
 class VAE(nn.Module):
-    def __init__(self, x_dim, y_dim, z_dim=6):
+    def __init__(self, x_dim, z_dims, y_dim, FLAGS):
         super(VAE, self).__init__()
-        self.K = z_dim
+
+        self.K = z_dims[-1]
         self.best_performance = 0
 
-        self.encode = nn.Sequential(
-            nn.Linear(x_dim, 1024),
-            nn.ReLU(True),
-            nn.Linear(1024, 1024),
-            nn.ReLU(True),
-            nn.Linear(1024, 2*self.K))
+        self.num_neurons = [x_dim] + z_dims
+        self.layers = []
+        for i in range(len(self.num_neurons) - 2):
+            self.layers.append(nn.Linear(self.num_neurons[i], self.num_neurons[i+1]))
+            self.layers.append(nn.LeakyReLU(negative_slope=FLAGS.neg_slope))
+        self.layers.append(nn.Linear(self.num_neurons[i+1], 2*self.K))
 
-        self.decode = nn.Sequential(
-                nn.Linear(self.K, y_dim))
+        self.encode = nn.Sequential(*self.layers)
+
+        self.decode = nn.Sequential(nn.Linear(self.K, y_dim))
 
     def forward(self, x, num_sample=1):
         if x.dim() > 2 : x = x.view(x.size(0),-1)
