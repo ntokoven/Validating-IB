@@ -11,15 +11,15 @@ from helper import *
 from models import VAE, MLP, MIEstimator
 
 
-def train_encoder(FLAGS, dnn_hidden_units, train_loader, test_loader, device, dnn_input_units=784, dnn_output_units=10):
+def train_encoder(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loader, test_loader, device, dnn_input_units=784, dnn_output_units=10):
     if FLAGS.weight_decay != 0:
         print('\nWeight decay to be applied: ', FLAGS.weight_decay)
     if FLAGS.p_dropout != 0:
         print('Applying dropout with rate %s' % FLAGS.p_dropout)
     if FLAGS.enc_type == 'MLP':
-        model = MLP(dnn_input_units, dnn_hidden_units, dnn_output_units, FLAGS).to(device)
+        model = MLP(dnn_input_units, encoder_hidden_units, decoder_hidden_units, dnn_output_units, FLAGS).to(device)
     elif FLAGS.enc_type =='VAE':
-        model = VAE(dnn_input_units, dnn_hidden_units, dnn_output_units, FLAGS).to(device) 
+        model = VAE(dnn_input_units, encoder_hidden_units, decoder_hidden_units, dnn_output_units, FLAGS).to(device) 
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=FLAGS.learning_rate, weight_decay=FLAGS.weight_decay) #default lr 1e-3
@@ -34,7 +34,7 @@ def train_encoder(FLAGS, dnn_hidden_units, train_loader, test_loader, device, dn
         model.train()
 
         for X_train, y_train in train_loader:
-            X_train, y_train = X_train.flatten(start_dim=1).to(device), y_train.to(device)
+            X_train, y_train = X_train.flatten(start_dim=1).to(device), y_train.flatten(start_dim=0).to(device)
             optimizer.zero_grad()
             if FLAGS.enc_type =='VAE':
                 (mu, std), out, z_train = model(X_train)
@@ -80,9 +80,97 @@ def train_encoder(FLAGS, dnn_hidden_units, train_loader, test_loader, device, dn
     model.best_performance = max_accuracy
     return model.eval()
 
-def train_encoder_VIB(FLAGS, dnn_hidden_units, train_loader, test_loader, device, dnn_input_units=784, dnn_output_units=10):
+def train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loader, test_loader, device, dnn_input_units=784, dnn_output_units=10):
 
-    model = VAE(dnn_input_units, dnn_hidden_units, dnn_output_units, FLAGS).to(device)
+    model = VAE(dnn_input_units, encoder_hidden_units, decoder_hidden_units, dnn_output_units, FLAGS).to(device)
+    q_z_given_y = nn.Sequential(
+                                nn.Linear(dnn_output_units, encoder_hidden_units[-1])
+                                ).to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(),lr=1e-4,betas=(0.5,0.999))
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer,gamma=0.97)
+    
+    X_test, y_test = build_test_set(test_loader, device)
+    
+    start_time = time.time()
+    max_accuracy = 0
+    beta = FLAGS.vib_beta
+    
+    print('I am here doing ceb-%s, vib-%s' % (FLAGS.use_of_ceb, FLAGS.use_of_vib))
+
+    for epoch in range(FLAGS.num_epochs):
+        for X_train, y_train in train_loader:
+            # beta = scheduler(epoch)
+            
+            X_train, y_train = X_train.flatten(start_dim=1).to(device), y_train.flatten(start_dim=0).to(device)
+            optimizer.zero_grad()
+            (mu, std), out, z_train = model(X_train)
+            # encoding = model.reparametrize_n(mu, std, 1) # Can average across more samles
+            # out = model.decode(encoding)
+            
+            class_loss = criterion(out, y_train).div(math.log(2)) #make log of base 2 
+            if FLAGS.use_of_vib:
+                info_loss = - 0.5 * (1 + 2 * std.log() - mu.pow(2) - std.pow(2)).sum(1).mean().div(math.log(2)) # KL(p(Z|x), r(Z))
+            elif FLAGS.use_of_ceb:
+                y = onehot_encoding(y_train, device=device).float()
+                mu_y = q_z_given_y(y) #onehot_encoding(y_train).float().to(device))
+                eps = model.reparametrize_n(torch.zeros_like(mu), std, 1)
+                # breakpoint()
+                # TODO: finish this loss by formalizing backward encoder q(z|y) to count mu_y and to sample eps~N(0, 1)
+                # info_loss = 0.5 / (1 - beta) * ((mu - mu_y) @ (mu - mu_y + 2 * eps).t()).sum(1).mean()  #torch.exp(torch.log(beta/(1-beta)))
+                if beta == 1:
+                    beta += 1e-5
+                info_loss = 0.5 / (1 - beta) * ((mu - mu_y) @ (mu - mu_y + 2 * eps).t()).mean()  #torch.exp(torch.log(beta/(1-beta)))
+
+            total_loss = class_loss + beta * info_loss # H(p,q) + beta * KL(p(Z|x), r(Z))
+
+            izy_bound = math.log(10,2) - class_loss # upperbound on entropy - empirical cross-entropy
+            izx_bound = info_loss
+
+            total_loss.backward()
+            optimizer.step()
+
+        if epoch % FLAGS.eval_freq == 0 or epoch == FLAGS.num_epochs - 1:
+
+                print('\n'+'#'*30)
+                print('Training epoch - %d/%d' % (epoch+1, FLAGS.num_epochs))
+
+                (mu, std), out_test, z_test = model(X_test)
+
+
+                test_class_loss = criterion(out, y_train).div(math.log(2)) #make log of base 2
+                if FLAGS.use_of_vib:
+                    test_info_loss = - 0.5 * (1 + 2 * std.log() - mu.pow(2) - std.pow(2)).sum(1).mean().div(math.log(2)) # KL(p(Z|x), r(Z))
+                elif FLAGS.use_of_ceb:
+                    y = onehot_encoding(y_test, device=device).float()
+                    mu_y = q_z_given_y(y) 
+                    eps = model.reparametrize_n(torch.zeros_like(mu), std, 1)
+                    test_info_loss = 0.5 / (1 - beta) * ((mu - mu_y) @ (mu - mu_y + 2 * eps).t()).mean()  #torch.exp(torch.log(beta/(1-beta)))
+
+
+                test_total_loss = test_class_loss + beta * test_info_loss
+                test_accuracy = accuracy(out_test, y_test)
+                if test_accuracy > max_accuracy:
+                    max_accuracy = test_accuracy
+
+                print('Train: Accuracy - %0.3f, Loss - %0.3f' % (accuracy(out, y_train), total_loss))
+                print('Test: Accuracy - %0.3f, Loss - %0.3f' % (test_accuracy, test_total_loss))
+                print('Upperbound I(X, T)', izx_bound.item())
+                print('Lowerbound I(T, Y)', izy_bound.item())
+                print('Beta = %s' % FLAGS.vib_beta)
+                print('Elapsed time: ', time.time() - start_time)
+                print('#'*30,'\n')
+                if test_accuracy == 1 and test_total_loss == 0:
+                    break
+    model.best_performance = max_accuracy
+    return model
+
+# Concerns and questions
+# z = f(x) + eps, eps~N(0, 1) => z ~ N(f(x)_mu, 1)
+# z ~ N(f(x)_mu, f(x)_sigma)
+def train_encoder_CEB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loader, test_loader, device, dnn_input_units=784, dnn_output_units=10):
+    
+    model = VAE(dnn_input_units, encoder_hidden_units, decoder_hidden_units, dnn_output_units, FLAGS).to(device)
     
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(),lr=1e-4,betas=(0.5,0.999))
@@ -98,13 +186,13 @@ def train_encoder_VIB(FLAGS, dnn_hidden_units, train_loader, test_loader, device
         for X_train, y_train in train_loader:
             # beta = scheduler(epoch)
             
-            X_train, y_train = X_train.flatten(start_dim=1).to(device), y_train.to(device)
+            X_train, y_train = X_train.flatten(start_dim=1).to(device), y_train.flatten(start_dim=0).to(device)
             optimizer.zero_grad()
             (mu, std), out, z_train = model(X_train)
             
-            class_loss = criterion(out, y_train).div(math.log(2)) #make log of base 2
-            info_loss = -0.5 * (1 + 2 * std.log() - mu.pow(2) - std.pow(2)).sum(1).mean().div(math.log(2))
-            total_loss = class_loss + beta * info_loss # -(H(p,q) - beta * I(X,z))
+            class_loss = criterion(out, y_train).div(math.log(2)) #make log of base 2 
+            info_loss = -0.5 * (1 + 2 * std.log() - mu.pow(2) - std.pow(2)).sum(1).mean().div(math.log(2)) # KL(p(Z|x), r(Z))
+            total_loss = class_loss + beta * info_loss # -H(p,q) + beta * KL(p(Z|x), r(Z))
 
             izy_bound = math.log(10,2) - class_loss # upperbound on entropy - empirical cross-entropy
             izx_bound = info_loss

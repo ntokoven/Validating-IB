@@ -8,8 +8,8 @@ from collections import Counter, OrderedDict
 from shapely.geometry import Polygon
 
 # Map integer labels to onehot encoding
-def onehot_encoding(x, num_classes=10):
-    x_onehot = torch.FloatTensor(x.shape[0], num_classes)
+def onehot_encoding(x, num_classes=10, device=torch.device('cpu')):
+    x_onehot = torch.FloatTensor(x.shape[0], num_classes).to(device)
     x_onehot.zero_()
     x_onehot.scatter_(1, x.view(x.shape[0], 1), 1)
     return x_onehot
@@ -21,6 +21,8 @@ def whitening(x, batch_dim=0):
     x = (x - mean) / std
     # NaN values might occur if certain dimension always takes 0 value for all examples in the batch, so std is 0 as well
     x[x != x] = 0 
+    x[x == -float('inf')] = 0
+    x[x == float('inf')] = 0
     return x
 
 def concat(names_list):
@@ -73,26 +75,6 @@ def accuracy(predictions, targets):
         accuracy = (predictions.argmax(dim=1) == targets.argmax(dim=1)).type(torch.FloatTensor).mean().item()
     return accuracy
 
-def abc_metric(best_performance, accuracy_over_labels, nums):
-    perf = best_performance * np.ones(len(nums))
-    x_y_curve1 = [(np.log10(nums)[i], accuracy_over_labels[i]) for i in range(len(nums))]
-    x_y_curve2 = [(np.log10(nums)[i], perf[i]) for i in range(len(nums))] 
-
-    polygon_points = [] #creates an empty list where we will append the points to create the polygon
-
-    for xyvalue in x_y_curve1:
-        polygon_points.append([xyvalue[0],xyvalue[1]]) #append all xy points for curve 1
-
-    for xyvalue in x_y_curve2[::-1]:
-        polygon_points.append([xyvalue[0],xyvalue[1]]) #append all xy points for curve 2 in the reverse order (from last point to first point)
-
-    for xyvalue in x_y_curve1[0:1]:
-        polygon_points.append([xyvalue[0],xyvalue[1]]) #append the first point in curve 1 again, to it "closes" the polygon
-
-    polygon = Polygon(polygon_points)
-    area = polygon.area
-    return area
-
 def build_test_set(test_loader, device):
     """
     Build training set given test data loader
@@ -106,7 +88,7 @@ def build_test_set(test_loader, device):
     xs = torch.cat(xs, 0)
     ys = torch.cat(ys, 0)
     
-    X_test, y_test = xs.clone().detach().flatten(start_dim=1).to(device), ys.clone().detach().type(torch.LongTensor).to(device)
+    X_test, y_test = xs.clone().detach().flatten(start_dim=1).to(device), ys.clone().detach().type(torch.LongTensor).flatten(start_dim=0).to(device)
     return X_test, y_test
 
 
@@ -149,6 +131,28 @@ def get_info(FLAGS):
         info += ' wd = %s' % FLAGS.weight_decay
     return info
 
+def abc_metric(best_performance, accuracy_over_labels, nums, top=True):
+    perf = best_performance * np.ones(len(nums))
+    x_y_curve1 = [(np.log10(nums)[i], accuracy_over_labels[i]) for i in range(len(nums))]
+    if top:
+        x_y_curve2 = [(np.log10(nums)[i], perf[i]) for i in range(len(nums))] 
+    else:
+        x_y_curve2 = [(np.log10(nums)[i], 1) for i in range(len(nums))] 
+    polygon_points = [] #creates an empty list where we will append the points to create the polygon
+
+    for xyvalue in x_y_curve1:
+        polygon_points.append([xyvalue[0],xyvalue[1]]) #append all xy points for curve 1
+
+    for xyvalue in x_y_curve2[::-1]:
+        polygon_points.append([xyvalue[0],xyvalue[1]]) #append all xy points for curve 2 in the reverse order (from last point to first point)
+
+    for xyvalue in x_y_curve1[0:1]:
+        polygon_points.append([xyvalue[0],xyvalue[1]]) #append the first point in curve 1 again, to it "closes" the polygon
+
+    polygon = Polygon(polygon_points)
+    area = polygon.area
+    return area
+
 def plot_acc_numlabels(FLAGS, acc_df, layers_names, best_performance, num_labels_range):
     
     fig1, ax = plt.subplots(len(layers_names), 1, sharex=True)
@@ -157,16 +161,16 @@ def plot_acc_numlabels(FLAGS, acc_df, layers_names, best_performance, num_labels
 
     mean = lambda x: np.mean(x)
     std = lambda x: np.std(x)
-
+    abc_metric_values = {}
     for i in range(len(layers_names)):
         means = acc_df[layers_names[i]].apply(mean)
         stds = acc_df[layers_names[i]].apply(std)
-        metric_value = abc_metric(best_performance, acc_df[layers_names[i]].apply(mean).to_numpy(), nums)
+        abc_metric_values[layers_names[i]] = metric_value = abc_metric(best_performance, acc_df[layers_names[i]].apply(mean).to_numpy(), nums), abc_metric(best_performance, acc_df[layers_names[i]].apply(mean).to_numpy(), nums, top=False)
         if len(layers_names) != 1:
             tx = ax[i]
         else:
             tx = ax
-        tx.plot(np.log10(nums), means, color=colors[i], label=layers_names[i]+' + %s => ABC=%0.5f' % (get_info(FLAGS), metric_value))
+        tx.plot(np.log10(nums), means, color=colors[i], label=layers_names[i]+' + %s => ABC=(%0.5f, %0.5f)' % (get_info(FLAGS), metric_value[0], metric_value[1]))
         tx.plot(np.log10(nums), best_performance * np.ones(len(nums)))
         tx.fill_between(np.log10(nums), means - stds, means + stds, facecolor=colors[i], interpolate=True, alpha=0.25)
         tx.grid()
@@ -182,6 +186,10 @@ def plot_acc_numlabels(FLAGS, acc_df, layers_names, best_performance, num_labels
           os.makedirs(FLAGS.result_path)
     fig1.savefig(FLAGS.result_path+'/acc_numlabels.png')
     plt.close(fig1)
+
+    return abc_metric_values
+
+
 
 def plot_mie_curve(FLAGS, mi_df, layer, seed):
     if not os.path.exists(FLAGS.result_path+'/mie_curves'):

@@ -20,7 +20,7 @@ from helper import *
 from models import VAE, MLP, MIEstimator
 from train import train_encoder, train_encoder_VIB
 
-def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, eval_freq=1, layer=''):
+def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer=''):
     
     if not mie_on_test:
         loader = train_loader
@@ -88,7 +88,7 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, eval_
 
         mi_over_epoch['X'] = np.nan_to_num(np.array(mi_over_epoch['X']))
         mi_over_epoch['Y'] = np.nan_to_num(np.array(mi_over_epoch['Y']))
-
+        
         # Discard top and bottom 5% to avoid numerical outliers
         tmp = mi_over_epoch['X'][mi_over_epoch['X'] < np.quantile(mi_over_epoch['X'], 1 - mie_k_discard/100)]
         tmp = tmp[tmp > np.quantile(mi_over_epoch['X'], mie_k_discard/100)]
@@ -105,7 +105,7 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, eval_
         mi_mean_est_all['X'].append(np.mean(mi_over_epoch['X']))
         mi_mean_est_all['Y'].append(np.mean(mi_over_epoch['Y']))
             
-        if epoch % eval_freq == 0 or epoch == num_epochs - 1:
+        if epoch % FLAGS.eval_freq == 0 or epoch == num_epochs - 1:
 
             print('#'*30)
             print('Step - ', epoch)
@@ -158,18 +158,31 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, eval_
     return max_MI_x, max_MI_y, mi_estimator_X, mi_estimator_Y
 
 def main():
-    if FLAGS.use_of_vib:
-        Encoder = train_encoder_VIB(FLAGS, dnn_hidden_units, train_loader, test_loader, device)
+    '''
+    if FLAGS.use_pretrain and os.path.exists('pretrained_encoders/enc_%sepochs.pt' % FLAGS.num_epochs):
+        Encoder = MLP(dnn_input_units, dnn_hidden_units, dnn_output_units, FLAGS).to(device)
+        Encoder.load_state_dict(torch.load('pretrained_encoders/enc_%sepochs.pt' % FLAGS.num_epochs))
     else:
-        Encoder = train_encoder(FLAGS, dnn_hidden_units, train_loader, test_loader, device)
+        if FLAGS.use_of_vib:
+            Encoder = train_encoder_VIB(FLAGS, dnn_hidden_units, train_loader, test_loader, device)
+        else:
+            Encoder = train_encoder(FLAGS, dnn_hidden_units, train_loader, test_loader, device)
+        torch.save(Encoder.state_dict(), 'pretrained_encoders/enc_%sepochs.pt' % FLAGS.num_epochs)
+        print('Saved encoder that has been trained for %s epochs' % FLAGS.num_epochs)
+    '''
+    if FLAGS.use_of_vib:
+        Encoder = train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loader, test_loader, device)
+    else:
+        Encoder = train_encoder(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loader, test_loader, device)
     print('Best achieved performance: %s \n' % Encoder.best_performance)
+    # '''
     print(Encoder)
 
     if FLAGS.layers_to_track:
         layers_to_track = FLAGS.layers_to_track.replace('_', '-').split(",")
-        layers_to_track = [int(layer_num) for layer_num in layers_to_track]
+        layers_to_track = [int(layer_num) - len(decoder_hidden_units) for layer_num in layers_to_track]
     else:
-        layers_to_track = [-1]
+        layers_to_track = [-(1+len(decoder_hidden_units))]
 
     pos_layers = np.array(layers_to_track) - 1
     layers_names = []
@@ -203,9 +216,6 @@ def main():
             else:
                 MI_X, MI_Y, MIE_X, MIE_Y = train_MI(Encoder, mie_on_test=mie_on_test, seed=seeds[i], num_epochs=mie_num_epochs)
             
-            if np.isnan(MI_X) or np.isnan(MI_Y):
-                exit
-            
             if FLAGS.mie_save_models:
                 if not os.path.exists(FLAGS.result_path+'/estimator_models'):
                     os.makedirs(FLAGS.result_path+'/estimator_models')
@@ -237,8 +247,10 @@ if __name__=='__main__':
                         help='Probability of dropout')
     parser.add_argument('--p_input_dropout', type = float, default = 0,
                         help='Probability of dropout')
-    parser.add_argument('--dnn_hidden_units', type = str, default = '1024,512,256,128,64',
-                        help='Comma separated list of number of units in each hidden layer')
+    parser.add_argument('--encoder_hidden_units', type = str, default = '1024,1024,256',
+                        help='Comma separated list of number of units in each hidden layer of encoder')
+    parser.add_argument('--decoder_hidden_units', type = str, default = '',
+                        help='Comma separated list of number of units in each hidden layer of decoder')
     parser.add_argument('--default_seed', type = int, default = 69,
                         help='Default seed for encoder training')
     parser.add_argument('--seeds', type = str, default = '69',
@@ -257,6 +269,8 @@ if __name__=='__main__':
                         help='Lagrangian multiplier representing prioirity of MI(z, y) over MI(x, z)')
     parser.add_argument('--use_of_vib', type = bool, default = False,
                         help='Need to train using Variational Information Bottleneck objective')
+    parser.add_argument('--use_of_ceb', type = bool, default = False,
+                        help='Need to train using Conditional Entropy Bottleneck objective')
     parser.add_argument('--whiten_z', type = bool, default = False,
                         help='Need to normalize the distribution of latent variables before when building MIE')
     parser.add_argument('--mie_on_test', type = bool, default = False,
@@ -291,10 +305,10 @@ if __name__=='__main__':
                       help='Directory for storing results')
     parser.add_argument('--comment', type = str, default = '',
                       help='Additional comments on the runtime set up')
-
+    parser.add_argument('--use_pretrain', type = bool, default = False,
+                      help='Need to load pretrained encoders or train from scratch')
+    
     FLAGS, unparsed = parser.parse_known_args()
-
-    print_flags(FLAGS)
 
     global_start_time = time.time()
 
@@ -327,11 +341,14 @@ if __name__=='__main__':
         FLAGS.whiten_z = True
     '''
 
-    if FLAGS.use_of_vib:
+    if FLAGS.use_of_vib or FLAGS.use_of_ceb:
         enc_type = FLAGS.enc_type = 'VAE'
 
     if FLAGS.comment != '':
         FLAGS.result_path += '/%s' % FLAGS.comment
+
+    print_flags(FLAGS)
+    
 
     np.random.seed(default_seed)
     torch.manual_seed(default_seed)
@@ -348,11 +365,17 @@ if __name__=='__main__':
     # Single time define the testing set. Keep it fixed until the end
     X_test, y_test = build_test_set(test_loader, device)
 
-    if FLAGS.dnn_hidden_units:
-        dnn_hidden_units = FLAGS.dnn_hidden_units.split(",")
-        dnn_hidden_units = [int(dnn_hidden_unit_) for dnn_hidden_unit_ in dnn_hidden_units]
+    if FLAGS.encoder_hidden_units:
+        encoder_hidden_units = FLAGS.encoder_hidden_units.split(",")
+        encoder_hidden_units = [int(dnn_hidden_unit_) for dnn_hidden_unit_ in encoder_hidden_units]
     else:
-        dnn_hidden_units = []
+        encoder_hidden_units = []
+    if FLAGS.decoder_hidden_units:
+        decoder_hidden_units = FLAGS.decoder_hidden_units.split(",")
+        decoder_hidden_units = [int(dnn_hidden_unit_) for dnn_hidden_unit_ in decoder_hidden_units]
+    else:
+        decoder_hidden_units = []
+    
     
     dnn_input_units = X_test.shape[-1]
     dnn_output_units = num_classes

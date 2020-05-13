@@ -22,19 +22,33 @@ from train import train_encoder, train_encoder_VIB
 
 
 def main():
-    
-    if FLAGS.use_of_vib:
-        Encoder = train_encoder_VIB(FLAGS, dnn_hidden_units, train_loader, test_loader, device)
+    '''
+    # functionality used to fine-tune the experiments without retraining encoders
+    if FLAGS.use_pretrain and os.path.exists('pretrained_encoders/enc_%sepochs.pt' % FLAGS.num_epochs):
+        Encoder = MLP(dnn_input_units, dnn_hidden_units, dnn_output_units, FLAGS).to(device)
+        Encoder.load_state_dict(torch.load('pretrained_encoders/enc_%sepochs.pt' % FLAGS.num_epochs))
     else:
-        Encoder = train_encoder(FLAGS, dnn_hidden_units, train_loader, test_loader, device)
+        if FLAGS.use_of_vib:
+            Encoder = train_encoder_VIB(FLAGS, dnn_hidden_units, train_loader, test_loader, device)
+        else:
+            Encoder = train_encoder(FLAGS, dnn_hidden_units, train_loader, test_loader, device)
+        torch.save(Encoder.state_dict(), 'pretrained_encoders/enc_%sepochs.pt' % FLAGS.num_epochs)
+        print('Saved encoder that has been trained for %s epochs' % FLAGS.num_epochs)
+    '''
+    if FLAGS.use_of_vib or FLAGS.use_of_ceb:
+        print('I am here')
+        Encoder = train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loader, test_loader, device)
+    else:
+        Encoder = train_encoder(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loader, test_loader, device)
     print('Best achieved performance: %s \n' % Encoder.best_performance)
+    # '''
     print(Encoder)
 
     if FLAGS.layers_to_track:
         layers_to_track = FLAGS.layers_to_track.replace('_', '-').split(",")
-        layers_to_track = [int(layer_num) for layer_num in layers_to_track]
+        layers_to_track = [int(layer_num) - len(decoder_hidden_units) for layer_num in layers_to_track]
     else:
-        layers_to_track = [-1]
+        layers_to_track = [-(1+len(decoder_hidden_units))]
 
     pos_layers = np.array(layers_to_track) - 1
     layers_names = []
@@ -50,10 +64,27 @@ def main():
     if FLAGS.num_seeds:
         seeds = np.arange(1, FLAGS.num_seeds + 1)
     print('Seeds to evaluate - ', seeds)
+    
+    # '''
+    if not os.path.exists('label_partitions'):
+        time_start = time.time()
+        print('Performing custom split to get training subsets with different amount of labeled examples')
+        os.makedirs('label_partitions')
+        train_subsets = build_training_subsets(train_set, base=2, num_classes=num_classes)
+        for key in train_subsets.keys():
+            torch.save(train_subsets[key], 'label_partitions/%s.pt' % key)
+        print('Done custom split. Time spent: %s \n' %s (time.time() - time_start))
+    else:
+        print('Loading pre-saved label partitions of the dataset')
+        keys = [int(''.join(c for c in file_name if c.isdigit())) for file_name in os.listdir('label_partitions')]
+        train_subsets = {}
+        for key in keys:
+            train_subsets[key] = torch.load('label_partitions/%s.pt' % key)
+    '''
     print('Performing custom split to get training subsets with different amount of labeled examples')
     train_subsets = build_training_subsets(train_set, base=2, num_classes=num_classes)
+    # '''
     num_labels_range = list(train_subsets.keys()) 
-    print('Done custom split \n')
 
     acc = {layer:{i:[] for i in num_labels_range} for layer in layers_names}
 
@@ -80,12 +111,15 @@ def main():
                 acc[layer][num_labels].append(test_accuracy)
         print('Elapsed time - ', time.time() - start_time)
 
-    acc_df = pd.DataFrame.from_dict(acc)
     if not os.path.exists(FLAGS.result_path):
           os.makedirs(FLAGS.result_path)
-    acc_df.to_csv(FLAGS.result_path+'/acc_%s_%s.csv' % (enc_type.lower(), int(1/weight_decay) if weight_decay != 0 else 0), sep=' ')
-    plot_acc_numlabels(FLAGS, acc_df, layers_names, Encoder.best_performance, num_labels_range)
-
+    acc_df = pd.DataFrame.from_dict(acc)
+    acc_df.to_csv(FLAGS.result_path+'/acc_track.csv', sep=' ')
+    
+    abc_metric_values = plot_acc_numlabels(FLAGS, acc_df, layers_names, Encoder.best_performance, num_labels_range)
+    # breakpoint()
+    # pd.DataFrame(abc_metric_values, index=[_ for _ in range(len([abc_metric_values[key] for key in abc_metric_values.keys()][0]))]).to_csv(FLAGS.result_path+'/abc_values.csv', sep=' ')
+    pd.DataFrame(abc_metric_values, index=[0, 1]).to_csv(FLAGS.result_path+'/abc_values.csv', sep=' ')
 
 if __name__=='__main__':
     # Command line arguments
@@ -96,8 +130,10 @@ if __name__=='__main__':
                         help='Probability of dropout')
     parser.add_argument('--p_input_dropout', type = float, default = 0,
                         help='Probability of dropout')
-    parser.add_argument('--dnn_hidden_units', type = str, default = '1024,512,256,128,64',
-                        help='Comma separated list of number of units in each hidden layer')
+    parser.add_argument('--encoder_hidden_units', type = str, default = '1024,1024,256',
+                        help='Comma separated list of number of units in each hidden layer of encoder')
+    parser.add_argument('--decoder_hidden_units', type = str, default = '',
+                        help='Comma separated list of number of units in each hidden layer of decoder')
     parser.add_argument('--default_seed', type = int, default = 69,
                         help='Default seed for encoder training')
     parser.add_argument('--seeds', type = str, default = '69',
@@ -118,6 +154,8 @@ if __name__=='__main__':
                         help='Lagrangian multiplier representing prioirity of MI(z, y) over MI(x, z)')
     parser.add_argument('--use_of_vib', type = bool, default = False,
                         help='Need to train using Variational Information Bottleneck objective')
+    parser.add_argument('--use_of_ceb', type = bool, default = False,
+                        help='Need to train using Conditional Entropy Bottleneck objective')
     parser.add_argument('--whiten_z', type = bool, default = False,
                         help='Need to normalize the distribution of latent variables before when building MIE')
     parser.add_argument('--mie_on_test', type = bool, default = False,
@@ -152,10 +190,13 @@ if __name__=='__main__':
                       help='Directory for storing results')
     parser.add_argument('--comment', type = str, default = '',
                       help='Additional comments on the runtime set up')
+    parser.add_argument('--use_pretrain', type = bool, default = False,
+                      help='Need to load pretrained encoders or train from scratch')
+    parser.add_argument('--mnist12k', type = bool,
+                      help='Run for reduced MNIST 12k')
     
     FLAGS, unparsed = parser.parse_known_args()
 
-    print_flags(FLAGS)
 
     global_start_time = time.time()
 
@@ -188,19 +229,38 @@ if __name__=='__main__':
         FLAGS.whiten_z = True
     '''
 
-    if FLAGS.use_of_vib:
+    if FLAGS.use_of_vib or FLAGS.use_of_ceb:
         enc_type = FLAGS.enc_type = 'VAE'
 
     if FLAGS.comment != '':
         FLAGS.result_path += '/%s' % FLAGS.comment
+
+    print_flags(FLAGS)
+    
 
     np.random.seed(default_seed)
     torch.manual_seed(default_seed)
     seed(default_seed)
 
     # Loading the MNIST dataset
-    train_set = MNIST('./data/MNIST', download=True, train=True, transform=ToTensor())
-    test_set = MNIST('./data/MNIST', download=True, train=False, transform=ToTensor())
+    if FLAGS.mnist12k:
+        print('Uploading MNIST 12k')
+        train_data = np.loadtxt('data/mnist12k/mnist_train.amat')
+        X_train = train_data[:, :-1] / 1.0
+        y_train = train_data[:, -1:]
+
+        test_data = np.loadtxt('data/mnist12k/mnist_test.amat')
+        X_test = test_data[:, :-1] / 1.0
+        y_test = test_data[:, -1:]
+
+        X_train, y_train, X_test, y_test = torch.FloatTensor(X_train), torch.LongTensor(y_train), torch.FloatTensor(X_test), torch.LongTensor(y_test)
+        train_set = torch.utils.data.TensorDataset(X_train, y_train)
+        test_set = torch.utils.data.TensorDataset(X_test, y_test)
+        print('Done MNIST 12k')
+    else:
+
+        train_set = MNIST('./data/MNIST', download=True, train=True, transform=ToTensor())
+        test_set = MNIST('./data/MNIST', download=True, train=False, transform=ToTensor())
 
     # Initialization of the data loader
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=1)
@@ -209,11 +269,16 @@ if __name__=='__main__':
     # Single time define the testing set. Keep it fixed until the end
     X_test, y_test = build_test_set(test_loader, device)
 
-    if FLAGS.dnn_hidden_units:
-        dnn_hidden_units = FLAGS.dnn_hidden_units.split(",")
-        dnn_hidden_units = [int(dnn_hidden_unit_) for dnn_hidden_unit_ in dnn_hidden_units]
+    if FLAGS.encoder_hidden_units:
+        encoder_hidden_units = FLAGS.encoder_hidden_units.split(",")
+        encoder_hidden_units = [int(dnn_hidden_unit_) for dnn_hidden_unit_ in encoder_hidden_units]
     else:
-        dnn_hidden_units = []
+        encoder_hidden_units = []
+    if FLAGS.decoder_hidden_units:
+        decoder_hidden_units = FLAGS.decoder_hidden_units.split(",")
+        decoder_hidden_units = [int(dnn_hidden_unit_) for dnn_hidden_unit_ in decoder_hidden_units]
+    else:
+        decoder_hidden_units = []
     
     dnn_input_units = X_test.shape[-1]
     dnn_output_units = num_classes

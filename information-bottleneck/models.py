@@ -26,45 +26,53 @@ class MIEstimator(nn.Module):
         return -softplus(-pos).mean() - softplus(neg).mean(), pos.mean() - neg.exp().mean() + 1
 
 class MLP(nn.Module):
-    def __init__(self, n_inputs, n_hidden, n_classes, FLAGS):
+    def __init__(self, x_dim, z_dims, dec_dims, y_dim, FLAGS):
         super(MLP, self).__init__()
-        self.n_inputs = n_inputs
-        self.n_hidden = n_hidden
-        self.n_classes = n_classes
 
         p_dropout, neg_slope = FLAGS.p_dropout, FLAGS.neg_slope
-        
+        self.K = z_dims[-1]
         self.layers = []
-        self.num_neurons = [n_inputs] + n_hidden + [n_classes]
+        self.enc_num_neurons = [x_dim] + z_dims 
+        self.dec_num_neurons = [self.K] + dec_dims + [y_dim]
         self.best_performance = 0
         self.models = {}
 
-        for i in range(len(self.num_neurons) - 2):
-            self.layers.append(nn.Linear(self.num_neurons[i], self.num_neurons[i+1]))
+        for i in range(len(self.enc_num_neurons) - 2):
+            self.layers.append(nn.Linear(self.enc_num_neurons[i], self.enc_num_neurons[i+1]))
             if p_dropout != 0:
                 self.layers.append(nn.Dropout(p_dropout))
             self.layers.append(nn.LeakyReLU(negative_slope=FLAGS.neg_slope))
             self.models['Linear{}'.format(i)] = nn.Sequential(*self.layers)
-        if p_dropout != 0:
-            self.layers.append(nn.Dropout(p_dropout))
-        self.layers.append(nn.Linear(self.num_neurons[i+1], self.num_neurons[i+2]))
-
-        self.models['Output'] = nn.Sequential(*self.layers)
-        self.full_model = self.models['Output']
+        self.layers.append(nn.Linear(self.enc_num_neurons[i+1], self.K))
+        self.models['Linear{}'.format(i+1)] = nn.Sequential(*self.layers)
+        self.encode = self.models['Linear{}'.format(i+1)]
+        
+        self.dec_layers = []
+        for i in range(len(self.dec_num_neurons) - 2):
+            self.dec_layers.append(nn.Linear(self.dec_num_neurons[i], self.dec_num_neurons[i+1]))
+            if p_dropout != 0:
+                self.dec_layers.append(nn.Dropout(p_dropout))
+            self.dec_layers.append(nn.LeakyReLU(negative_slope=FLAGS.neg_slope))
+            self.models['Linear{}'.format(i)] = nn.Sequential(*self.layers)
+        
+        self.dec_layers.append(nn.Linear(self.dec_num_neurons[-2], y_dim))
+        
+        self.decode = nn.Sequential(*self.dec_layers)
         
         
     def forward(self, x, exitLayer=None): 
-        if exitLayer is not None:
-            out = self.models[exitLayer](x)
-        else:
-            out = self.full_model(x)
+        out = self.decode(self.encode(x))
+        # if exitLayer is not None:
+        #     out = self.models[exitLayer](x)
+        # else:
+        #     out = self.full_model(x)
         return out
 
-
+'''
 class VAE(nn.Module):
-    def __init__(self, x_dim, z_dims, y_dim, FLAGS):
+    def __init__(self, x_dim, z_dims, dec_dims, y_dim, FLAGS):
         super(VAE, self).__init__()
-
+    
         self.K = z_dims[-1]
         self.best_performance = 0
 
@@ -76,8 +84,15 @@ class VAE(nn.Module):
         self.layers.append(nn.Linear(self.num_neurons[i+1], 2*self.K))
 
         self.encode = nn.Sequential(*self.layers)
-
-        self.decode = nn.Sequential(nn.Linear(self.K, y_dim))
+        
+        self.dec_num_neurons = [self.K] + dec_dims + [y_dim]
+        self.dec_layers = []
+        for i in range(len(self.dec_num_neurons) - 2):
+            self.dec_layers.append(nn.Linear(self.dec_num_neurons[i], self.dec_num_neurons[i+1]))
+            self.dec_layers.append(nn.LeakyReLU(negative_slope=FLAGS.neg_slope))
+        self.dec_layers.append(nn.Linear(self.dec_num_neurons[i+1], y_dim))
+        
+        self.decode = nn.Sequential(*self.dec_layers)
 
     def forward(self, x, num_sample=1):
         if x.dim() > 2 : x = x.view(x.size(0),-1)
@@ -85,6 +100,75 @@ class VAE(nn.Module):
         statistics = self.encode(x)
         mu = statistics[:,:self.K]
         std = softplus(statistics[:,self.K:]-5,beta=1)
+
+        encoding = self.reparametrize_n(mu, std, num_sample)
+        logit = self.decode(encoding)
+
+        if num_sample == 1 : pass
+        elif num_sample > 1 : logit = softmax(logit, dim=2).mean(0)
+
+        return (mu, std), logit, encoding
+
+    def reparametrize_n(self, mu, std, n=1):
+        # reference :
+        # http://pytorch.org/docs/0.3.1/_modules/torch/distributions.html#Distribution.sample_n
+        def expand(v):
+            if isinstance(v, Number):
+                return torch.Tensor([v]).expand(n, 1)
+            else:
+                return v.expand(n, *v.size())
+
+        if n != 1 :
+            mu = expand(mu)
+            std = expand(std)
+
+        eps = Variable(std.data.new(std.size()).normal_())
+
+        return mu + eps * std
+
+    def weight_init(self):
+        for m in self._modules:
+            xavier_init(self._modules[m])
+'''
+
+class VAE(nn.Module):
+    def __init__(self, x_dim, z_dims, dec_dims, y_dim, FLAGS):
+        super(VAE, self).__init__()
+
+        self.CEB = FLAGS.use_of_ceb
+        self.K = z_dims[-1]
+        self.best_performance = 0
+
+        self.num_neurons = [x_dim] + z_dims
+        self.layers = []
+        for i in range(len(self.num_neurons) - 2):
+            self.layers.append(nn.Linear(self.num_neurons[i], self.num_neurons[i+1]))
+            self.layers.append(nn.LeakyReLU(negative_slope=FLAGS.neg_slope))
+        if self.CEB:
+            self.layers.append(nn.Linear(self.num_neurons[i+1], self.K))
+        else:
+            self.layers.append(nn.Linear(self.num_neurons[i+1], 2*self.K))
+
+        self.encode = nn.Sequential(*self.layers)
+        
+        self.dec_num_neurons = [self.K] + dec_dims + [y_dim]
+        self.dec_layers = []
+        for i in range(len(self.dec_num_neurons) - 2):
+            self.dec_layers.append(nn.Linear(self.dec_num_neurons[i], self.dec_num_neurons[i+1]))
+            self.dec_layers.append(nn.LeakyReLU(negative_slope=FLAGS.neg_slope))
+        self.dec_layers.append(nn.Linear(self.dec_num_neurons[-2], y_dim))
+        
+        self.decode = nn.Sequential(*self.dec_layers)
+
+    def forward(self, x, num_sample=1):
+        if x.dim() > 2 : x = x.view(x.size(0),-1)
+
+        statistics = self.encode(x)
+        mu = statistics[:,:self.K]
+        if self.CEB:
+            std = torch.ones_like(mu)
+        else:
+            std = softplus(statistics[:,self.K:]-5,beta=1)
 
         encoding = self.reparametrize_n(mu, std, num_sample)
         logit = self.decode(encoding)

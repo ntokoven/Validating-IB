@@ -31,10 +31,14 @@ class EmbeddedDataset:
                     x = x.cuda()
                     y = y.cuda()
                 if enc_type == 'VAE':
-                    (_, _), _, p_z_given_x = encoder(x)
+                    (mu, _), _, p_z_given_x = encoder(x)
+                    reps.append(mu.detach()) #to sample mean (reduced variance). works for mnist12k to show the superiority of vib with higher betas
+                    # reps.append(p_z_given_x.detach()) # more informative variance. Honest solution
+
                 else: 
                     p_z_given_x = encoder(x)
-                reps.append(p_z_given_x.detach())
+                    reps.append(p_z_given_x.detach())
+                
                 ys.append(y)
             ys = torch.cat(ys, 0)
 
@@ -56,11 +60,10 @@ def train_and_evaluate_linear_model(train_set, test_set, solver='saga', multi_cl
     x_train, y_train = build_matrix(train_set)
     x_test, y_test = build_matrix(test_set)
 
-    x_train, y_train = np.nan_to_num(x_train), np.nan_to_num(y_train)
-    x_test, y_test = np.nan_to_num(x_test), np.nan_to_num(y_test)
-
-    x_train = scaler.fit_transform(x_train)
-    x_test = scaler.transform(x_test)
+    
+    # For some set-ups NaN values can occur after scaling
+    x_train = np.nan_to_num(scaler.fit_transform(x_train))
+    x_test = np.nan_to_num(scaler.transform(x_test))
 
     model.fit(x_train, y_train)
     test_accuracy = model.score(x_test, y_test)
@@ -127,4 +130,5 @@ def build_training_subsets(train_set, base=2, num_classes=10):
         train_subset = split(train_set, num_labels//2, 'Balanced')
         train_subset.indices = train_subsets[num_labels/2].indices + train_subset.indices
         train_subsets[num_labels] = train_subset
+    
     return train_subsets
