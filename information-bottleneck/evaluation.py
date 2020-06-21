@@ -118,6 +118,7 @@ def evaluate(encoder, enc_type, train_on, test_on, cuda):
 
 # Get partition of dataset into overlapping training subsets of labeled examples (subset_i \in subset_j for i, j \in every i < j)
 def build_training_subsets(train_set, base=2, num_classes=10):
+    
     n_train_samples = len(train_set) 
 
     # Different partition as increasing powers of base up to the size of the train_set
@@ -132,3 +133,6 @@ def build_training_subsets(train_set, base=2, num_classes=10):
         train_subsets[num_labels] = train_subset
     
     return train_subsets
+
+   
+ 

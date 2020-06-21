@@ -1,8 +1,8 @@
 import torch
 import torch.optim as optim
 import torch.nn as nn
-from torchvision.datasets import MNIST
-from torchvision.transforms import ToTensor
+from torchvision.datasets import MNIST, CIFAR10
+from torchvision.transforms import Compose, ToTensor, Normalize
 from torch.utils.data import DataLoader
 
 import argparse
@@ -12,11 +12,12 @@ from random import randint, seed
 import os
 import matplotlib.pyplot as plt
 import math
-import time
+import time, datetime
 
 from data_utils import *
 from evaluation import *
 from helper import *
+from option import get_option
 from models import VAE, MLP, MIEstimator
 from train import train_encoder, train_encoder_VIB
 
@@ -42,11 +43,6 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer
     {'params': mi_estimator_X.parameters(), 'lr':mie_lr_x}, #default 3e-5
     {'params': mi_estimator_Y.parameters(), 'lr':mie_lr_y}, #default 1e-4
     ])
-    if beta == 0:
-        use_scheduler = True
-        beta_scheduler = ExponentialScheduler(start_value=1e-6, end_value=1, n_iterations=500, start_iteration=20)
-    else:
-        use_scheduler = False
 
     start_time = time.time()
     max_MI_x = max_MI_y = 0
@@ -54,8 +50,6 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer
     mi_mean_est_all = {'X': [], 'Y': []}
     
     for epoch in range(num_epochs):
-        if use_scheduler:
-            beta = beta_scheduler(epoch)
         mi_over_epoch = {'X': [], 'Y': []}
         for X, y in loader:
             y = onehot_encoding(y)
@@ -170,10 +164,10 @@ def main():
         torch.save(Encoder.state_dict(), 'pretrained_encoders/enc_%sepochs.pt' % FLAGS.num_epochs)
         print('Saved encoder that has been trained for %s epochs' % FLAGS.num_epochs)
     '''
-    if FLAGS.use_of_vib:
-        Encoder = train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loader, test_loader, device)
+    if FLAGS.use_of_vib or FLAGS.use_of_ceb:
+        Encoder = train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loader, test_loader, device, dnn_output_units=FLAGS.num_classes)
     else:
-        Encoder = train_encoder(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loader, test_loader, device)
+        Encoder = train_encoder(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loader, test_loader, device, dnn_output_units=FLAGS.num_classes)
     print('Best achieved performance: %s \n' % Encoder.best_performance)
     # '''
     print(Encoder)
@@ -241,74 +235,7 @@ def main():
 if __name__=='__main__':
     # Command line arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('--enc_type', type = str, default = 'MLP',
-                        help='Type of encoder to train')
-    parser.add_argument('--p_dropout', type = float, default = 0,
-                        help='Probability of dropout')
-    parser.add_argument('--p_input_dropout', type = float, default = 0,
-                        help='Probability of dropout')
-    parser.add_argument('--encoder_hidden_units', type = str, default = '1024,1024,256',
-                        help='Comma separated list of number of units in each hidden layer of encoder')
-    parser.add_argument('--decoder_hidden_units', type = str, default = '',
-                        help='Comma separated list of number of units in each hidden layer of decoder')
-    parser.add_argument('--default_seed', type = int, default = 69,
-                        help='Default seed for encoder training')
-    parser.add_argument('--seeds', type = str, default = '69',
-                        help='Comma separated list of random seeds')
-    parser.add_argument('--layers_to_track', type = str, default = '_1',
-                        help='Comma separated list of negative positions of encoding layers to evaluate with underscore as a minus sign (starting from _1:last before the classifying layer)')
-    parser.add_argument('--learning_rate', type = float, default = 1e-3,
-                        help='Learning rate for encoder training')
-    parser.add_argument('--mie_lr_x', type = float, default = 3e-5,
-                        help='Learning rate for estimation of mutual information with input')
-    parser.add_argument('--mie_lr_y', type = float, default = 1e-4,
-                        help='Learning rate for estimation of mutual information with target')
-    parser.add_argument('--mie_beta', type = float, default = 1,
-                        help='Lagrangian multiplier representing prioirity of MI(z, y) over MI(x, z)')
-    parser.add_argument('--vib_beta', type = float, default = 1e-3,
-                        help='Lagrangian multiplier representing prioirity of MI(z, y) over MI(x, z)')
-    parser.add_argument('--use_of_vib', type = bool, default = False,
-                        help='Need to train using Variational Information Bottleneck objective')
-    parser.add_argument('--use_of_ceb', type = bool, default = False,
-                        help='Need to train using Conditional Entropy Bottleneck objective')
-    parser.add_argument('--whiten_z', type = bool, default = False,
-                        help='Need to normalize the distribution of latent variables before when building MIE')
-    parser.add_argument('--mie_on_test', type = bool, default = False,
-                        help='Whether to build MI estimator using training or test set')
-    parser.add_argument('--mie_k_discard', type = float, default = 5,
-                        help='Per cent of top and bottom MI estimations to discard')
-    parser.add_argument('--mie_converg_bound', type = float, default = 5e-2,
-                        help='Tightness of bound for the convergence criteria')
-    parser.add_argument('--weight_decay', type = float, default = 0,
-                      help='Value of weight decay applied to optimizer')
-    parser.add_argument('--num_epochs', type = int, default = 20,
-                        help='Number of epochs to do training')
-    parser.add_argument('--mie_num_epochs', type = int, default = 100,
-                        help='Max number of epochs to do MIE training')
-    parser.add_argument('--mie_save_models', type = bool, default = False,
-                      help='Need to store MIE models learnt')
-    parser.add_argument('--mie_train_till_end', type = bool, default = False,
-                      help='Need to train for mie_num_epochs or convergence')
-    parser.add_argument('--num_classes', type = int, default = 10,
-                        help='Number of classes')
-    parser.add_argument('--batch_size', type = int, default = 64,
-                        help='Batch size to run trainer.')
-    parser.add_argument('--eval_freq', type=int, default=1,
-                            help='Frequency of evaluation on the test set')
-    parser.add_argument('--derive_w_size', type=int, default=500,
-                            help='Compute the slope of the learning curve over this amount of training epochs')
-    parser.add_argument('--w_size', type=int, default=20,
-                            help='Window size to count towards convergence criteria')
-    parser.add_argument('--neg_slope', type=float, default=0,
-                        help='Negative slope parameter for LeakyReLU')
-    parser.add_argument('--result_path', type = str, default = 'results_mie',
-                      help='Directory for storing results')
-    parser.add_argument('--comment', type = str, default = '',
-                      help='Additional comments on the runtime set up')
-    parser.add_argument('--use_pretrain', type = bool, default = False,
-                      help='Need to load pretrained encoders or train from scratch')
-    
-    FLAGS, unparsed = parser.parse_known_args()
+    FLAGS, unparsed = get_option(parser)
 
     global_start_time = time.time()
 
@@ -353,10 +280,31 @@ if __name__=='__main__':
     np.random.seed(default_seed)
     torch.manual_seed(default_seed)
     seed(default_seed)
+    if FLAGS.cifar10:
+        print('Uploading CIFAR10')
+        transform = Compose(
+                    [ToTensor(),
+                    Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        train_set = CIFAR10(root='./data/CIFAR10', train=True, download=True, transform=transform)
+        test_set = CIFAR10(root='./data/CIFAR10', train=False, download=True, transform=transform)
+    elif FLAGS.mnist12k:
+        print('Uploading MNIST 12k')
+        train_data = np.loadtxt('data/mnist12k/mnist_train.amat')
+        X_train = train_data[:, :-1] / 1.0
+        y_train = train_data[:, -1:]
 
-    # Loading the MNIST dataset
-    train_set = MNIST('./data/MNIST', download=True, train=True, transform=ToTensor())
-    test_set = MNIST('./data/MNIST', download=True, train=False, transform=ToTensor())
+        test_data = np.loadtxt('data/mnist12k/mnist_test.amat')
+        X_test = test_data[:, :-1] / 1.0
+        y_test = test_data[:, -1:]
+
+        X_train, y_train, X_test, y_test = torch.FloatTensor(X_train), torch.LongTensor(y_train), torch.FloatTensor(X_test), torch.LongTensor(y_test)
+        train_set = torch.utils.data.TensorDataset(X_train, y_train)
+        test_set = torch.utils.data.TensorDataset(X_test, y_test)
+        print('Done MNIST 12k')
+    else:
+        print('Uploading Regular MNIST')
+        train_set = MNIST('./data/MNIST', download=True, train=True, transform=ToTensor())
+        test_set = MNIST('./data/MNIST', download=True, train=False, transform=ToTensor())
 
     # Initialization of the data loader
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=1)
@@ -382,6 +330,5 @@ if __name__=='__main__':
 
     main()
 
-    print('Excecution finished with overall time elapsed - %s \n\n' % (time.time() - global_start_time))
     print_flags(FLAGS)
-
+    print('Excecution finished with overall time elapsed - %s \n\n' % str(datetime.timedelta(seconds=int(time.time() - global_start_time))))

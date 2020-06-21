@@ -75,7 +75,7 @@ def accuracy(predictions, targets):
         accuracy = (predictions.argmax(dim=1) == targets.argmax(dim=1)).type(torch.FloatTensor).mean().item()
     return accuracy
 
-def build_test_set(test_loader, device):
+def build_test_set(test_loader, device, flatten=True):
     """
     Build training set given test data loader
     """
@@ -87,10 +87,10 @@ def build_test_set(test_loader, device):
 
     xs = torch.cat(xs, 0)
     ys = torch.cat(ys, 0)
-    
-    X_test, y_test = xs.clone().detach().flatten(start_dim=1).to(device), ys.clone().detach().type(torch.LongTensor).flatten(start_dim=0).to(device)
-    return X_test, y_test
-
+    if flatten:
+        return xs.detach().flatten(start_dim=1).to(device), ys.detach().type(torch.LongTensor).flatten(start_dim=0).to(device)
+    else:
+        return xs.detach().to(device), ys.detach().type(torch.LongTensor).to(device)
 
 def print_flags(flags):
     """
@@ -100,7 +100,6 @@ def print_flags(flags):
     for key, value in vars(flags).items():
         print(key + ' : ' + str(value))
     print('-'*30, '\n')
-
 
 def rand_color():
     r = np.random.randint(0, 255)
@@ -188,8 +187,6 @@ def plot_acc_numlabels(FLAGS, acc_df, layers_names, best_performance, num_labels
     plt.close(fig1)
 
     return abc_metric_values
-
-
 
 def plot_mie_curve(FLAGS, mi_df, layer, seed):
     if not os.path.exists(FLAGS.result_path+'/mie_curves'):
