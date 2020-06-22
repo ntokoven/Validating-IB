@@ -67,12 +67,12 @@ def main():
         seeds = np.arange(1, FLAGS.num_seeds + 1)
     print('Seeds to evaluate - ', seeds)
     
-    #'''
+    '''
     if not os.path.exists('label_partitions'):
         time_start = time.time()
         print('Performing custom split to get training subsets with different amount of labeled examples')
         os.makedirs('label_partitions')
-        train_subsets = build_training_subsets(train_set, base=2, num_classes=num_classes)
+        train_subsets = build_training_subsets(train_set, base=2, num_classes=FLAGS.num_classes)
         for key in train_subsets.keys():
             torch.save(train_subsets[key], 'label_partitions/%s.pt' % key)
         print('Done custom split. Time spent: %s \n' %s (time.time() - time_start))
@@ -84,7 +84,7 @@ def main():
             train_subsets[key] = torch.load('label_partitions/%s.pt' % key)
     '''
     print('Performing custom split to get training subsets with different amount of labeled examples')
-    train_subsets = build_training_subsets(train_set, base=2, num_classes=num_classes)
+    train_subsets = build_training_subsets(train_set, base=2, num_classes=FLAGS.num_classes)
     # '''
     num_labels_range = list(train_subsets.keys()) 
 
@@ -101,11 +101,11 @@ def main():
 
         for layer in layers_names:
             for num_labels in num_labels_range:
-                print('\n\nEvaluating for %s (labels per class - %d)' % (layer, int(num_labels/num_classes)))
-                if enc_type == 'MLP':
-                    train_accuracy, test_accuracy = evaluate(encoder=Encoder.models[layer], enc_type=enc_type, train_on=train_subsets[num_labels], test_on=test_set, cuda=torch.cuda.is_available())
+                print('\n\nEvaluating for %s (labels per class - %d)' % (layer, int(num_labels/FLAGS.num_classes)))
+                if FLAGS.enc_type == 'MLP':
+                    train_accuracy, test_accuracy = evaluate(encoder=Encoder.models[layer], enc_type=FLAGS.enc_type, train_on=train_subsets[num_labels], test_on=test_set, cuda=torch.cuda.is_available())
                 else:
-                    train_accuracy, test_accuracy = evaluate(encoder=Encoder, enc_type=enc_type, train_on=train_subsets[num_labels], test_on=test_set, cuda=torch.cuda.is_available())
+                    train_accuracy, test_accuracy = evaluate(encoder=Encoder, enc_type=FLAGS.enc_type, train_on=train_subsets[num_labels], test_on=test_set, cuda=torch.cuda.is_available())
 
                 print('Train Accuracy: %f'% train_accuracy)
                 print('Test Accuracy: %f'% test_accuracy)

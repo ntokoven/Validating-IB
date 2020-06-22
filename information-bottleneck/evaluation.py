@@ -26,7 +26,8 @@ class EmbeddedDataset:
         reps = []
         with torch.no_grad():
             for x, y in data_loader:
-                x = x.flatten(start_dim=1)
+                if x.shape[1] == 1:
+                    x = x.flatten(start_dim=1)
                 if cuda:
                     x = x.cuda()
                     y = y.cuda()

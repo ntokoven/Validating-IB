@@ -186,7 +186,7 @@ def train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_l
                 print('Training epoch - %d/%d' % (epoch+1, FLAGS.num_epochs))
 
                 (mu, std), out_test, z_test = model(X_test)
-                test_class_loss = criterion(out, y_test).div(math.log(2)) #make log of base 2
+                test_class_loss = criterion(out_test, y_test).div(math.log(2)) #make log of base 2
                 if FLAGS.use_of_vib:
                     test_info_loss = - 0.5 * (1 + 2 * std.log() - mu.pow(2) - std.pow(2)).sum(1).mean().div(math.log(2)) # KL(p(Z|x), r(Z))
                 elif FLAGS.use_of_ceb:

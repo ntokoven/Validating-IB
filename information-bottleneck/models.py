@@ -102,7 +102,7 @@ class CNN(nn.Module):
         self.dec_layers.append(nn.Linear(self.dec_num_channels[-2], y_dim))
         
         self.decode = nn.Sequential(*self.dec_layers)
-        print('Dencoder architecture', self.decode)
+        print('Decoder architecture', self.decode)
 
     def forward(self, x):
         out = self.decode(self.encode(x))
@@ -157,35 +157,36 @@ class VAE(nn.Module):
 
         self.num_neurons = [x_dim] + z_dims
         if FLAGS.cifar10:
+            print('Building VAE with Convolutional architecture')
             self.encode = nn.Sequential(
                 nn.Conv2d(3, 64, 3, stride=1, padding=1), 
-                nn.ReLU(),
                 nn.BatchNorm2d(64), 
+                nn.ReLU(),
                 nn.MaxPool2d(3, stride=2, padding=1),
                 nn.Conv2d(64, 128, 3, stride=1, padding=1),
+                nn.BatchNorm2d(128),
                 nn.ReLU(),
-                nn.BatchNorm2d(128), 
                 nn.MaxPool2d(3, stride=2, padding=1),
                 nn.Conv2d(128, 256, 3, stride=1, padding=1),
-                nn.ReLU(),
                 nn.BatchNorm2d(256), 
+                nn.ReLU(),
                 nn.Conv2d(256, 256, 3, stride=1, padding=1),
-                nn.ReLU(),
                 nn.BatchNorm2d(256), 
+                nn.ReLU(),
                 nn.MaxPool2d(3, stride=2, padding=1),
                 nn.Conv2d(256, 512, 3, stride=1, padding=1),
+                nn.BatchNorm2d(512),
                 nn.ReLU(),
-                nn.BatchNorm2d(512), 
                 nn.Conv2d(512, 512, 3, stride=1, padding=1),
-                nn.ReLU(),
                 nn.BatchNorm2d(512), 
+                nn.ReLU(),
                 nn.MaxPool2d(3, stride=2, padding=1),
                 nn.Conv2d(512, 512, 3, stride=1, padding=1),
-                nn.ReLU(),
                 nn.BatchNorm2d(512), 
+                nn.ReLU(),
                 nn.Conv2d(512, 512, 3, stride=1, padding=1),
-                nn.ReLU(),
                 nn.BatchNorm2d(512), 
+                nn.ReLU(),
                 nn.MaxPool2d(3, stride=2, padding=1),
                 nn.Flatten(),
                 nn.Linear(512, 2 * self.K))
