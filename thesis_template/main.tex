@@ -1,0 +1,260 @@
+
+%% LLT: Turn off some annoying warnings...
+\RequirePackage{silence}
+\WarningFilter{titlesec}{Non standard sectioning command}
+\WarningFilter{scrreprt}{Usage of package}
+\WarningFilter{scrreprt}{Activating an ugly workaround}
+
+
+% **************************************************
+% Document Class Definition
+% **************************************************
+
+\documentclass[%
+	paper=A4,					% paper size --> A4 is default in Germany
+	twoside=true,				% onesite or twoside printing
+	openright,					% doublepage cleaning ends up right side
+	parskip=full,				% spacing value / method for paragraphs
+	chapterprefix=true,			% prefix for chapter marks
+	11pt,						% font size
+	headings=normal,			% size of headings
+	bibliography=totoc,			% include bib in toc
+	listof=totoc,				% include listof entries in toc
+	titlepage=on,				% own page for each title page
+	captions=tableabove,		% display table captions above the float env
+	draft=false,				% value for draft version
+]{scrreprt}%
+
+% **************************************************
+% Debug LaTeX Information
+% **************************************************
+%\listfiles
+
+% **************************************************
+% Information and Commands for Reuse
+% **************************************************
+\newcommand{\thesisTitle}{Thesis Title}
+\newcommand{\thesisName}{Your Name}
+\newcommand{\thesisID}{Your ID}
+\newcommand{\thesisProgramme}{MSc Artificial Intelligence}
+\newcommand{\thesisSubject}{A Subtitle}
+\newcommand{\thesisDate}{\today}
+\newcommand{\thesisVersion}{My First Draft}
+
+\newcommand{\thesisFirstReviewer}{First Reviwer}
+\newcommand{\thesisFirstReviewerUniversity}{\protect{University of Amsterdam}}
+\newcommand{\thesisFirstReviewerDepartment}{First Reviewer's Department}
+
+
+\newcommand{\thesisFirstSupervisor}{Supervisor}
+\newcommand{\thesisFirstSupervisorUniversity}{\protect{University of Amsterdam}}
+\newcommand{\thesisFirstSupervisorDepartment}{Supervisor's Department}
+
+
+\newcommand{\thesisUniversity}{\protect{University of Amsterdam}}
+\newcommand{\thesisUniversityInstitute}{Informatics Institute}
+\newcommand{\thesisUniversityGroup}{Group where you did the thesis}
+\newcommand{\thesisUniversityCity}{Amsterdam}
+\newcommand{\thesisUniversityStreetAddress}{Science Park 904}
+\newcommand{\thesisUniversityPostalCode}{1098 XH}
+
+% **************************************************
+% Load and Configure Packages
+% **************************************************
+
+\usepackage[utf8]{inputenc}		% defines file's character encoding
+\usepackage[english]{babel} 	% babel system, adjust the language of the content
+
+\usepackage[					% clean thesis style
+	figuresep=colon,%
+	sansserif=false,%
+	hangfigurecaption=false,%
+	hangsection=false,%
+	hangsubsection=false,%
+	colorize=full,%
+	colortheme=bluemagenta,%
+% LLT: Use biber if using UTF8 encoding
+% 	bibsys=bibtex,%
+	bibsys=biber,%
+	bibfile=bib-refs,%
+	bibstyle=numeric,%
+	bibsorting=nyt,%
+]{cleanthesis}
+
+\hypersetup{					% setup the hyperref-package options
+	pdftitle={\thesisTitle},	% 	- title (PDF meta)
+	pdfsubject={\thesisSubject},% 	- subject (PDF meta)
+	pdfauthor={\thesisName},	% 	- author (PDF meta)
+	plainpages=false,			% 	-
+	colorlinks=true,			% 	- colorize links?
+	pdfborder={0 0 0},			% 	-
+	breaklinks=true,			% 	- allow line break inside links
+	bookmarksnumbered=true,		%
+	bookmarksopen=true			%
+}
+
+
+
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{epsfig}
+
+\usepackage{float}
+\usepackage{wrapfig}
+\usepackage[font=small]{caption}
+\usepackage{subcaption}
+
+\usepackage{multirow}
+\usepackage{makecell}
+\usepackage{pdflscape}
+\usepackage{tabu}
+\usepackage{diagbox}
+
+\usepackage{afterpage}
+\usepackage{scrextend}
+
+\usepackage{multirow,bigdelim}
+\usepackage{enumitem}
+
+\usepackage{morewrites}
+
+\usepackage{scalerel}
+
+\usepackage{todonotes}
+
+\usepackage{empheq}
+\usepackage[most]{tcolorbox}
+
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{theorems}
+\input{commands}
+\input{nomenclature}
+
+
+\usepackage{xspace}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% tbe rows counter
+\newcounter{magicrownumbers}
+\newcommand\rownumber{\stepcounter{magicrownumbers}\arabic{magicrownumbers}}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+% **************************************************
+% Document CONTENT
+% **************************************************
+
+\begin{document}
+	
+	% --------------------------
+	% rename document parts
+	% --------------------------
+	\renewcaptionname{english}{\figurename}{Fig.}
+	\renewcaptionname{english}{\tablename}{Tab.}
+	
+	% --------------------------
+	% Front matter
+	% --------------------------
+	\pagenumbering{roman}			% roman page numbing (invisible for empty page style)
+	\pagestyle{empty}				% no header or footers
+	\input{chapters/titlepages}		% INCLUDE: all titlepages
+	\cleardoublepage
+	
+	\pagestyle{plain}				% display just page numbers
+	\input{chapters/abstract}		% INCLUDE: the abstracts (english and german)
+	\cleardoublepage
+	%
+	\input{chapters/acknowledgement} % INCLUDE: acknowledgement
+	\cleardoublepage
+	%
+	\setcounter{tocdepth}{2}		% define depth of toc
+	\phantomsection 
+	\addcontentsline{toc}{chapter}{Table of Content}
+	\tableofcontents				% display table of contents
+	\cleardoublepage
+	
+	% --------------------------
+	% Body matter
+	% --------------------------
+	\pagenumbering{arabic}			% arabic page numbering
+	\setcounter{page}{1}			% set page counter
+	\pagestyle{maincontentstyle} 	% fancy header and footer
+	
+	
+	\input{chapters/introduction}
+	% add your chapters here
+	\input{chapters/conclusion}
+	\cleardoublepage
+	
+	% --------------------------
+	% Bibliography
+	% --------------------------
+	{%
+		\setstretch{1.1}
+		\renewcommand{\bibfont}{\normalfont\small}
+		\setlength{\biblabelsep}{0pt}
+		\setlength{\bibitemsep}{0.5\baselineskip plus 0.5\baselineskip}
+		\printbibliography[nottype=online]
+		\printbibliography[heading=subbibliography,title={Webseiten},type=online,prefixnumbers={@}]
+	}
+	\cleardoublepage
+	
+	% --------------------------
+	% Appendix
+	% --------------------------
+	\appendix
+
+	% Add the appendix here
+	
+	
+	
+	\cleardoublepage
+	
+	% --------------------------
+	% Back matter
+	% --------------------------
+	
+	\printnomenclature[2cm]
+	\cleardoublepage
+	
+	\begingroup
+	\parskip=0pt
+	%\tcblistof[\listofdefinition]{def}{}
+	\phantomsection 
+	\addcontentsline{toc}{chapter}{List of Definitions}
+	\listofdefinition
+	\endgroup
+	\clearpage
+	
+	\begingroup
+	\parskip=0pt
+	%\tcblistof[\listoftheorem]{thm}{}
+	\phantomsection 
+	\addcontentsline{toc}{chapter}{List of Theorems}
+	\listoftheorem
+	\endgroup
+	\clearpage
+	
+	\phantomsection 
+	\addcontentsline{toc}{chapter}{List of Figures}
+	\listoffigures
+	\cleardoublepage
+	
+	\phantomsection 
+	\addcontentsline{toc}{chapter}{List of Tables}
+	\listoftables
+	\cleardoublepage
+	
+	\input{chapters/colophon}
+	\cleardoublepage
+	
+	\input{chapters/declaration}
+	\clearpage
+	\newpage
+	\mbox{}
+	
+	% **************************************************
+	% End of Document CONTENT
+	% **************************************************
+\end{document}

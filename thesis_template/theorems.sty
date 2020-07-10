@@ -1,0 +1,75 @@
+%% cleanthesis.sty
+
+\usepackage{tcolorbox}
+\usepackage{cleveref}
+
+\usepackage{etoolbox}
+
+\newcommand{\listdefinitionname}{List of Definitions}
+\newlistof{definition}{def}{\listdefinitionname}
+
+\newcommand{\listthmname}{List of Theorems}
+\newlistof{theorem}{thm}{\listthmname}
+
+
+
+\definecolor{teagreen}{rgb}{0.82, 0.94, 0.75}
+\definecolor{beaublue}{rgb}{0.74, 0.83, 0.9}
+\definecolor{dodgerblue}{rgb}{0.12, 0.56, 1.0}
+\definecolor{darkpastelblue}{rgb}{0.47, 0.62, 0.8}
+\definecolor{x11gray}{rgb}{0.75, 0.75, 0.75}
+\tcbuselibrary{theorems}
+\makeatletter
+\crefformat{tcb@cnt@definition}{definition~#2#1#3}
+\Crefformat{tcb@cnt@definition}{Definition~#2#1#3}
+\crefformat{tcb@cnt@theorem}{theorem~#2#1#3}
+\Crefformat{tcb@cnt@theorem}{Theorem~#2#1#3}
+\crefformat{tcb@cnt@note}{note~#2#1#3}
+\Crefformat{tcb@cnt@note}{Note~#2#1#3}
+\makeatother
+\newtcbtheorem
+[list inside={def}]% init options
+{definition}% name
+{Definition}% title
+{%
+	colback=teagreen!5!teagreen,
+	colframe=YellowGreen!35!YellowGreen,
+	fonttitle=\bfseries,
+	after skip=10pt plus 5pt
+}% options
+{def}% prefix
+
+\newtcbtheorem
+[list inside={thm}]% init options
+{theorem}% name
+{Theorem}% title
+{%
+	colback=beaublue!5!beaublue,
+	colframe=darkpastelblue!35!darkpastelblue,
+	fonttitle=\bfseries,
+	after skip=10pt plus 5pt
+}% options
+{thm}% prefix
+
+\newtcbtheorem
+[]% init options
+{note}% name
+{Note}% title
+{%
+	colframe=x11gray!35!x11gray,
+	fonttitle=\bfseries,
+	after skip=10pt plus 5pt
+}% options
+{note}% prefix
+
+\newtcbtheorem
+[]% init options
+{example}% name
+{Example}% title
+{%
+	colframe=x11gray!35!x11gray,
+	fonttitle=\bfseries,
+	after skip=10pt plus 5pt
+}% options
+{ex}% prefix
+

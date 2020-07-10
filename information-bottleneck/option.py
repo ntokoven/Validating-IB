@@ -25,6 +25,8 @@ def get_option(parser):
                         help='Learning rate for estimation of mutual information with target')
     parser.add_argument('--mie_beta', type = float, default = 1,
                         help='Lagrangian multiplier representing prioirity of MI(z, y) over MI(x, z)')
+    parser.add_argument('--clip_grad_norm', type = float, default = 1e-3,
+                        help='Value of weights norm to clip')
     parser.add_argument('--vib_beta', type = float, default = 1e-3,
                         help='Lagrangian multiplier representing prioirity of MI(z, y) over MI(x, z)')
     parser.add_argument('--use_of_vib', type = bool, default = False,
@@ -53,7 +55,7 @@ def get_option(parser):
                         help='Number of classes')
     parser.add_argument('--batch_size', type = int, default = 64,
                         help='Batch size to run trainer.')
-    parser.add_argument('--eval_freq', type=int, default=1,
+    parser.add_argument('--eval_freq', type=int, default=10,
                             help='Frequency of evaluation on the test set')
     parser.add_argument('--derive_w_size', type=int, default=500,
                             help='Compute the slope of the learning curve over this amount of training epochs')
@@ -71,7 +73,16 @@ def get_option(parser):
                       help='Run for reduced MNIST 12k')
     parser.add_argument('--cifar10', type = bool,
                       help='Run for CIFAR10')
+    parser.add_argument('--load_subsets', type = bool,
+                      help='If need to perform custom split to get training subsets with different amount of labeled examples')
+    parser.add_argument('--use_scheduler', type = bool,
+                      help='Use Exponential Scheduler for beta')
+    parser.add_argument('--eval_num_samples', type = int, default = 1,
+                      help='Number of samples to evaluate the encoder (if 0, then using mean of the posterior')
+    parser.add_argument('--save_encoder', type = bool,
+                      help='Need tp save trained encoder')
+
+    # TODO: split arguments for MIE and GC separately
     
     FLAGS, unparsed = parser.parse_known_args()
     return FLAGS, unparsed
-

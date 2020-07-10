@@ -1,0 +1,5 @@
+Ran 2 experiments on GC with unit sigma and scheduled beta starting from 1e-5 to 1e-2 and 1e-3 -> build gc_plots and compare to ceb_us in a normal set-up
+
+Scheduling beta helps! - The best result so far is with unit sigma and with scheduling beta from 1e-5 to 1e-3
+
+

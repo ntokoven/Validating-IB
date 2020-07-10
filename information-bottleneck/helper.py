@@ -75,18 +75,22 @@ def accuracy(predictions, targets):
         accuracy = (predictions.argmax(dim=1) == targets.argmax(dim=1)).type(torch.FloatTensor).mean().item()
     return accuracy
 
-def build_test_set(test_loader, device, flatten=True):
+def build_test_set(test_loader, device, flatten=True, each=1):
     """
     Build training set given test data loader
     """
     xs = []
     ys = []
+    j = 0
     for x, y in test_loader:
-        xs.append(x)
-        ys.append(y)
+        if j % each == 0:
+            xs.append(x)
+            ys.append(y)
+        j += 1
 
     xs = torch.cat(xs, 0)
     ys = torch.cat(ys, 0)
+    print('Test set length: ', len(xs))
     if flatten:
         return xs.detach().flatten(start_dim=1).to(device), ys.detach().type(torch.LongTensor).flatten(start_dim=0).to(device)
     else:
@@ -131,10 +135,11 @@ def get_info(FLAGS):
     return info
 
 def abc_metric(best_performance, accuracy_over_labels, nums, top=True):
-    perf = best_performance * np.ones(len(nums))
+    # perf = best_performance * np.ones(len(nums))
     x_y_curve1 = [(np.log10(nums)[i], accuracy_over_labels[i]) for i in range(len(nums))]
+    top_linear_performance = max(x_y_curve1)[1] * np.ones(len(nums))
     if top:
-        x_y_curve2 = [(np.log10(nums)[i], perf[i]) for i in range(len(nums))] 
+        x_y_curve2 = [(np.log10(nums)[i], top_linear_performance[i]) for i in range(len(nums))] 
     else:
         x_y_curve2 = [(np.log10(nums)[i], 1) for i in range(len(nums))] 
     polygon_points = [] #creates an empty list where we will append the points to create the polygon

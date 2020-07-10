@@ -27,21 +27,27 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer
         loader = train_loader
     else:
         loader = test_loader
-
-    if enc_type == 'VAE':
-       (_, _), _, z_test = encoder(X_test)
-       z_test = z_test.detach().to(device)
+    # Keep full training set for the final MI estimations (validation set)
+    if FLAGS.cifar10:
+        X_test, y_test = build_test_set(train_loader, device, flatten=False, each=5)
     else:
-       z_test = encoder(X_test).detach().to(device)
+        X_test, y_test = build_test_set(train_loader, device, each=5)
+    # X_test, y_test = X_test[:len(X_test)//5], y_test[:len(y_test)//5]
+    
+    with torch.no_grad():
+        if FLAGS.enc_type == 'VAE':
+            (_, _), _, z_test = encoder(X_test)
+            z_test = z_test.detach().to(device)
+        else:
+            z_test = encoder(X_test).detach().to(device)
 
-    x_dim, y_dim, z_dim = X_test.shape[-1], dnn_output_units, z_test.shape[-1]
-
+    x_dim, y_dim, z_dim = X_test.flatten(start_dim=1).shape[-1], FLAGS.num_classes, z_test.shape[-1]
     mi_estimator_X = MIEstimator(x_dim, z_dim).to(device)
     mi_estimator_Y = MIEstimator(z_dim, y_dim).to(device)
 
     optimizer = optim.Adam([
-    {'params': mi_estimator_X.parameters(), 'lr':mie_lr_x}, #default 3e-5
-    {'params': mi_estimator_Y.parameters(), 'lr':mie_lr_y}, #default 1e-4
+    {'params': mi_estimator_X.parameters(), 'lr': FLAGS.mie_lr_x}, #default 3e-5
+    {'params': mi_estimator_Y.parameters(), 'lr': FLAGS.mie_lr_y}, #default 1e-4
     ])
 
     start_time = time.time()
@@ -53,15 +59,21 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer
         mi_over_epoch = {'X': [], 'Y': []}
         for X, y in loader:
             y = onehot_encoding(y)
-            X, y = X.flatten(start_dim=1).to(device), y.float().to(device)
 
-            if enc_type == 'VAE':
-                (_, _), _, z = encoder(X)
+            if not FLAGS.cifar10:
+                X, y = X.flatten(start_dim=1).to(device), y.float().to(device)
+            else: 
+                X, y = X.float().to(device), y.float().to(device)
+            if FLAGS.enc_type == 'VAE':
+                (_, _), _, z = encoder(X.float())
             else:
                 z = encoder(X)
 
             if FLAGS.whiten_z:
                 z = whitening(z)
+
+            if FLAGS.cifar10:
+                X = X.flatten(start_dim=1)
 
             optimizer.zero_grad()
 
@@ -79,77 +91,106 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer
 
             mi_over_epoch['X'].append(mi_estimation_X.item())
             mi_over_epoch['Y'].append(mi_estimation_Y.item())
-
-        mi_over_epoch['X'] = np.nan_to_num(np.array(mi_over_epoch['X']))
-        mi_over_epoch['Y'] = np.nan_to_num(np.array(mi_over_epoch['Y']))
-        
-        # Discard top and bottom 5% to avoid numerical outliers
-        tmp = mi_over_epoch['X'][mi_over_epoch['X'] < np.quantile(mi_over_epoch['X'], 1 - mie_k_discard/100)]
-        tmp = tmp[tmp > np.quantile(mi_over_epoch['X'], mie_k_discard/100)]
-        mi_over_epoch['X'] = tmp
-
-        tmp = mi_over_epoch['Y'][mi_over_epoch['Y'] < np.quantile(mi_over_epoch['Y'], 1 - mie_k_discard/100)]
-        tmp = tmp[tmp > np.quantile(mi_over_epoch['Y'], mie_k_discard/100)]
-        mi_over_epoch['Y'] = tmp
-
-        if np.mean(mi_over_epoch['X']) > max_MI_x:
-            max_MI_x = np.mean(mi_over_epoch['X'])
-        if np.mean(mi_over_epoch['Y']) > max_MI_y:
-            max_MI_y = np.mean(mi_over_epoch['Y'])
-        mi_mean_est_all['X'].append(np.mean(mi_over_epoch['X']))
-        mi_mean_est_all['Y'].append(np.mean(mi_over_epoch['Y']))
             
-        if epoch % FLAGS.eval_freq == 0 or epoch == num_epochs - 1:
+            del(X)
+            del(z)
 
-            print('#'*30)
-            print('Step - ', epoch)
-            print('Beta - ', beta)
+        with torch.no_grad():
+            mi_over_epoch['X'] = np.nan_to_num(np.array(mi_over_epoch['X']))
+            mi_over_epoch['Y'] = np.nan_to_num(np.array(mi_over_epoch['Y']))
+            
+            # Discard top and bottom 5% to avoid numerical outliers
+            tmp = mi_over_epoch['X'][mi_over_epoch['X'] < np.quantile(mi_over_epoch['X'], 1 - FLAGS.mie_k_discard/100)]
+            tmp = tmp[tmp > np.quantile(mi_over_epoch['X'], FLAGS.mie_k_discard/100)]
+            mi_over_epoch['X'] = tmp
+
+            tmp = mi_over_epoch['Y'][mi_over_epoch['Y'] < np.quantile(mi_over_epoch['Y'], 1 - FLAGS.mie_k_discard/100)]
+            tmp = tmp[tmp > np.quantile(mi_over_epoch['Y'], FLAGS.mie_k_discard/100)]
+            mi_over_epoch['Y'] = tmp
+
+            if np.mean(mi_over_epoch['X']) > max_MI_x:
+                max_MI_x = np.mean(mi_over_epoch['X'])
+            if np.mean(mi_over_epoch['Y']) > max_MI_y:
+                max_MI_y = np.mean(mi_over_epoch['Y'])
+            mi_mean_est_all['X'].append(np.mean(mi_over_epoch['X']))
+            mi_mean_est_all['Y'].append(np.mean(mi_over_epoch['Y']))
                 
-            if epoch >= 2:
-                delta_x = mi_mean_est_all['X'][-2] - mi_mean_est_all['X'][-1]
-                print('Delta X: ', delta_x)
-                delta_y = mi_mean_est_all['Y'][-2] - mi_mean_est_all['Y'][-1]
-                print('Delta Y: ', delta_y)
-            if epoch >= 10:
-                print('\nMean MI X for last 10', np.mean(mi_mean_est_all['X'][-10:]))
-                print('Mean MI Y for last 10', np.mean(mi_mean_est_all['Y'][-10:]))
-            if epoch >= 20:
-                print('\nMean MI X for last 20', np.mean(mi_mean_est_all['X'][-20:]))
-                print('Mean MI Y for last 20', np.mean(mi_mean_est_all['Y'][-20:]))
-            if epoch >= 30:
-                print('\nMean MI X for last 30', np.mean(mi_mean_est_all['X'][-30:]))
-                print('Mean MI Y for last 30', np.mean(mi_mean_est_all['Y'][-30:]))
-            if epoch >= FLAGS.derive_w_size+1:
-                # Measuring the derivative over derive_w_size last epochs 
-                # delta_f(x_i) = (f(x) - f(x_i)) / (x - x_i)
-                print('d I(X;Z) / d epoch:', (mi_mean_est_all['X'][-(FLAGS.derive_w_size+1)] - mi_mean_est_all['X'][-1]) / FLAGS.derive_w_size)
-                print('d I(Y;Z) / d epoch:', (mi_mean_est_all['Y'][-(FLAGS.derive_w_size+1)] - mi_mean_est_all['Y'][-1]) / FLAGS.derive_w_size)
-            if epoch >= 2*w_size:
-                print('Latest window mean value: ', np.mean(mi_mean_est_all['X'][-w_size:]))
-                print('Previous window mean value', np.mean(mi_mean_est_all['X'][-2*w_size:-w_size]))
-            print('Max I_est(X, Z) - %s' % max_MI_x)
-            print('Max I_est(Z, Y) - %s' % max_MI_y)
-            print('Elapsed time training MI for %s: %s' % (layer, time.time() - start_time))
-            print('#'*30,'\n')
-            mi_df = pd.DataFrame.from_dict(mi_mean_est_all)
-            if not os.path.exists(FLAGS.result_path+'/mie_train_values'):
-                os.makedirs(FLAGS.result_path+'/mie_train_values')
-            mi_df.to_csv(FLAGS.result_path+'/mie_train_values/mie_%s_%s_l%s_s%s.csv' % (enc_type.lower(), 'test' if mie_on_test else 'train', layer, seed), sep=' ')
-            
-            plot_mie_curve(FLAGS, mi_df, layer, seed)
+            if epoch % FLAGS.eval_freq == 0 or epoch == num_epochs - 1:
 
-        if epoch >= w_size and np.mean(mi_mean_est_all['X'][-2*w_size:-w_size]) > np.mean(mi_mean_est_all['X'][-w_size:]) - mie_converg_bound:
-            train_x = False
+                print('#'*30)
+                print('Step - ', epoch)
+                print('Beta - ', beta)
+                    
+                if epoch >= 2:
+                    delta_x = mi_mean_est_all['X'][-2] - mi_mean_est_all['X'][-1]
+                    print('Delta X: ', delta_x)
+                    delta_y = mi_mean_est_all['Y'][-2] - mi_mean_est_all['Y'][-1]
+                    print('Delta Y: ', delta_y)
+                if epoch >= 10:
+                    print('\nMean MI X for last 10', np.mean(mi_mean_est_all['X'][-10:]))
+                    print('Mean MI Y for last 10', np.mean(mi_mean_est_all['Y'][-10:]))
+                if epoch >= 20:
+                    print('\nMean MI X for last 20', np.mean(mi_mean_est_all['X'][-20:]))
+                    print('Mean MI Y for last 20', np.mean(mi_mean_est_all['Y'][-20:]))
+                if epoch >= 30:
+                    print('\nMean MI X for last 30', np.mean(mi_mean_est_all['X'][-30:]))
+                    print('Mean MI Y for last 30', np.mean(mi_mean_est_all['Y'][-30:]))
+                if epoch >= FLAGS.derive_w_size+1:
+                    # Measuring the derivative over derive_w_size last epochs 
+                    # delta_f(x_i) = (f(x) - f(x_i)) / (x - x_i)
+                    print('d I(X;Z) / d epoch:', (mi_mean_est_all['X'][-(FLAGS.derive_w_size+1)] - mi_mean_est_all['X'][-1]) / FLAGS.derive_w_size)
+                    print('d I(Y;Z) / d epoch:', (mi_mean_est_all['Y'][-(FLAGS.derive_w_size+1)] - mi_mean_est_all['Y'][-1]) / FLAGS.derive_w_size)
+                if epoch >= 2 * FLAGS.w_size:
+                    print('Latest window mean value: ', np.mean(mi_mean_est_all['X'][-FLAGS.w_size:]))
+                    print('Previous window mean value', np.mean(mi_mean_est_all['X'][-2*FLAGS.w_size:-FLAGS.w_size]))
+                print('Max I_est(X, Z) - %s' % max_MI_x)
+                print('Max I_est(Z, Y) - %s' % max_MI_y)
+                print('Elapsed time training MI for %s: %s' % (layer, time.time() - start_time))
+                print('#'*30,'\n')
+                mi_df = pd.DataFrame.from_dict(mi_mean_est_all)
+                if not os.path.exists(FLAGS.result_path+'/mie_train_values'):
+                    os.makedirs(FLAGS.result_path+'/mie_train_values')
+                mi_df.to_csv(FLAGS.result_path+'/mie_train_values/mie_%s_%s_l%s_s%s.csv' % (FLAGS.enc_type.lower(), 'test' if mie_on_test else 'train', layer, seed), sep=' ')
+                
+                plot_mie_curve(FLAGS, mi_df, layer, seed)
 
-        if epoch >= w_size and np.mean(mi_mean_est_all['Y'][-2*w_size:-w_size]) > np.mean(mi_mean_est_all['Y'][-w_size:]) - mie_converg_bound:
-            train_y = False
-        if not mie_train_till_end:
-            if train_x == False and train_y == False:
-                print('Convergence criteria successfully satisified.\n\n')
-                break
+            if epoch >= FLAGS.w_size and np.mean(mi_mean_est_all['X'][-2 * FLAGS.w_size:-FLAGS.w_size]) > np.mean(mi_mean_est_all['X'][-FLAGS.w_size:]) - FLAGS.mie_converg_bound:
+                train_x = False
 
-    plot_mie_curve(FLAGS, mi_df, layer, seed)            
-    return max_MI_x, max_MI_y, mi_estimator_X, mi_estimator_Y
+            if epoch >= FLAGS.w_size and np.mean(mi_mean_est_all['Y'][-2 * FLAGS.w_size:-FLAGS.w_size]) > np.mean(mi_mean_est_all['Y'][-FLAGS.w_size:]) - FLAGS.mie_converg_bound:
+                train_y = False
+            if not FLAGS.mie_train_till_end:
+                if train_x == False and train_y == False:
+                    print('Convergence criteria successfully satisified.\n\n')
+                    break
+
+    plot_mie_curve(FLAGS, mi_df, layer, seed)  
+
+    with torch.no_grad():
+        if FLAGS.enc_type == 'VAE':
+            (_, _), _, z_test = encoder(X_test)
+            z_test = z_test.detach().to(device)
+        else:
+            z_test = encoder(X_test).detach().to(device)
+        
+        X_test = X_test.flatten(start_dim=1).to(device)
+        y_test = onehot_encoding(y_test, device=device).float()
+        # breakpoint()
+        mi_estimation_X_final = mi_estimator_X(X_test, z_test)[1]#.mean()
+        mi_estimation_X_final = np.nan_to_num(mi_estimation_X_final.cpu().data.numpy())
+
+        mi_estimation_Y_final = mi_estimator_Y(z_test, y_test)[1]#.mean()
+        mi_estimation_Y_final = np.nan_to_num(mi_estimation_Y_final.cpu().data.numpy())
+
+        tmp = mi_estimation_X_final[mi_estimation_X_final < np.quantile(mi_estimation_X_final, 1 - FLAGS.mie_k_discard/100)]
+        tmp = tmp[tmp > np.quantile(mi_estimation_X_final, FLAGS.mie_k_discard/100)]
+        mi_estimation_X_final = tmp.mean()
+
+        tmp = mi_estimation_Y_final[mi_estimation_Y_final < np.quantile(mi_estimation_Y_final, 1 - FLAGS.mie_k_discard/100)]
+        tmp = tmp[tmp > np.quantile(mi_estimation_Y_final, FLAGS.mie_k_discard/100)]
+        mi_estimation_Y_final = tmp.mean()
+    print('ESTIMATIONS ', mi_estimation_X_final, mi_estimation_Y_final)
+    return mi_estimation_X_final, mi_estimation_Y_final, mi_estimator_X, mi_estimator_Y
 
 def main():
     '''
@@ -165,9 +206,9 @@ def main():
         print('Saved encoder that has been trained for %s epochs' % FLAGS.num_epochs)
     '''
     if FLAGS.use_of_vib or FLAGS.use_of_ceb:
-        Encoder = train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loader, test_loader, device, dnn_output_units=FLAGS.num_classes)
+        Encoder = train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loader, test_loader, device)
     else:
-        Encoder = train_encoder(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loader, test_loader, device, dnn_output_units=FLAGS.num_classes)
+        Encoder = train_encoder(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loader, test_loader, device)
     print('Best achieved performance: %s \n' % Encoder.best_performance)
     # '''
     print(Encoder)
@@ -187,7 +228,7 @@ def main():
         seeds = FLAGS.seeds.split(",")
         seeds = [int(seed) for seed in seeds]
     else:
-        seeds = [default_seed]
+        seeds = [FLAGS.default_seed]
 
     mie_layers = {layer:{s:(np.nan, np.nan) for s in seeds} for layer in layers_names}
     avg_max_mie_df = pd.Series(dtype=float)
@@ -205,16 +246,10 @@ def main():
         
         for j in range(len(layers_names)):
             layer = layers_names[j]
-            if enc_type == 'MLP':
-                MI_X, MI_Y, MIE_X, MIE_Y = train_MI(Encoder.models[layer], mie_on_test=mie_on_test, seed=seeds[i], layer=layer, num_epochs=mie_num_epochs)
+            if FLAGS.enc_type == 'MLP':
+                MI_X, MI_Y, MIE_X, MIE_Y = train_MI(Encoder.models[layer], mie_on_test=FLAGS.mie_on_test, seed=seeds[i], layer=layer, num_epochs=FLAGS.mie_num_epochs)
             else:
-                MI_X, MI_Y, MIE_X, MIE_Y = train_MI(Encoder, mie_on_test=mie_on_test, seed=seeds[i], num_epochs=mie_num_epochs)
-            
-            if FLAGS.mie_save_models:
-                if not os.path.exists(FLAGS.result_path+'/estimator_models'):
-                    os.makedirs(FLAGS.result_path+'/estimator_models')
-                torch.save(MIE_X.state_dict(), FLAGS.result_path + '/estimator_models/mie_x_%s_%s_l%s_s%s.pt' % (enc_type.lower(), 'test' if mie_on_test else 'train', layer, seeds[i]))
-                torch.save(MIE_Y.state_dict(), FLAGS.result_path + '/estimator_models/mie_y_%s_%s_l%s_s%s.pt' % (enc_type.lower(), 'test' if mie_on_test else 'train', layer, seeds[i]))
+                MI_X, MI_Y, MIE_X, MIE_Y = train_MI(Encoder, mie_on_test=FLAGS.mie_on_test, seed=seeds[i], num_epochs=FLAGS.mie_num_epochs)
             
             mie_layers[layer][seeds[i]] = (MI_X, MI_Y)
             max_mie_df = pd.DataFrame.from_dict(mie_layers).transpose()
@@ -228,6 +263,14 @@ def main():
             print('avg_max_values\n', avg_max_mie_df)
             print('MI values for %s - %s, %s' % (layer, MI_X, MI_Y))
             build_information_plane(mie_layers, layers_names[:j+1], seeds[:i+1], FLAGS)
+
+            #Saving models for reproducibility
+            if FLAGS.mie_save_models:
+                if not os.path.exists(FLAGS.result_path+'/estimator_models'):
+                    os.makedirs(FLAGS.result_path+'/estimator_models')
+                torch.save(MIE_X.state_dict(), FLAGS.result_path + '/estimator_models/mie_x_%s_%s_l%s_s%s.pt' % (FLAGS.enc_type.lower(), 'test' if FLAGS.mie_on_test else 'train', layer, seeds[i]))
+                torch.save(MIE_Y.state_dict(), FLAGS.result_path + '/estimator_models/mie_y_%s_%s_l%s_s%s.pt' % (FLAGS.enc_type.lower(), 'test' if FLAGS.mie_on_test else 'train', layer, seeds[i]))
+            
         
     print('Elapsed time - ', time.time() - start_time)
 
@@ -242,44 +285,25 @@ if __name__=='__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     cuda = torch.cuda.is_available()
 
-    default_seed = FLAGS.default_seed 
-    num_classes = FLAGS.num_classes
-    batch_size = FLAGS.batch_size 
-    enc_type = FLAGS.enc_type
-    p_dropout = FLAGS.p_dropout
-    weight_decay = FLAGS.weight_decay 
-    num_epochs = FLAGS.num_epochs
-    learning_rate = FLAGS.learning_rate
-    mie_lr_x = FLAGS.mie_lr_x
-    mie_lr_y = FLAGS.mie_lr_y
-    mie_num_epochs = FLAGS.mie_num_epochs
-    mie_beta = FLAGS.mie_beta
-    mie_on_test = FLAGS.mie_on_test
-    mie_k_discard = FLAGS.mie_k_discard
-    mie_train_till_end = FLAGS.mie_train_till_end
-    mie_converg_bound = FLAGS.mie_converg_bound
-    mie_save_models = FLAGS.mie_save_models
-    w_size = FLAGS.w_size
-
-    '''
     # If whitening helps adjust setting to apply also to weight_decay 0.
     # For now should manually set flag to True
-    if weight_decay != 0:
+    if FLAGS.weight_decay != 0:
+        print('MIE evaluation should be done for the normalized distribution')
         FLAGS.whiten_z = True
-    '''
 
     if FLAGS.use_of_vib or FLAGS.use_of_ceb:
-        enc_type = FLAGS.enc_type = 'VAE'
+        FLAGS.enc_type = 'VAE'
 
     if FLAGS.comment != '':
         FLAGS.result_path += '/%s' % FLAGS.comment
 
     print_flags(FLAGS)
-    
 
-    np.random.seed(default_seed)
-    torch.manual_seed(default_seed)
-    seed(default_seed)
+    np.random.seed(FLAGS.default_seed)
+    torch.manual_seed(FLAGS.default_seed)
+    seed(FLAGS.default_seed)
+
+    # Loading the MNIST dataset
     if FLAGS.cifar10:
         print('Uploading CIFAR10')
         transform = Compose(
@@ -287,7 +311,7 @@ if __name__=='__main__':
                     Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
         train_set = CIFAR10(root='./data/CIFAR10', train=True, download=True, transform=transform)
         test_set = CIFAR10(root='./data/CIFAR10', train=False, download=True, transform=transform)
-    elif FLAGS.mnist12k:
+    if FLAGS.mnist12k:
         print('Uploading MNIST 12k')
         train_data = np.loadtxt('data/mnist12k/mnist_train.amat')
         X_train = train_data[:, :-1] / 1.0
@@ -301,18 +325,15 @@ if __name__=='__main__':
         train_set = torch.utils.data.TensorDataset(X_train, y_train)
         test_set = torch.utils.data.TensorDataset(X_test, y_test)
         print('Done MNIST 12k')
-    else:
+    elif not FLAGS.cifar10:
         print('Uploading Regular MNIST')
         train_set = MNIST('./data/MNIST', download=True, train=True, transform=ToTensor())
         test_set = MNIST('./data/MNIST', download=True, train=False, transform=ToTensor())
 
-    # Initialization of the data loader
-    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=1)
-    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True, num_workers=1)
-
-    # Single time define the testing set. Keep it fixed until the end
-    X_test, y_test = build_test_set(test_loader, device)
-
+    train_loader = DataLoader(train_set, batch_size=FLAGS.batch_size, shuffle=True, num_workers=1)
+    test_loader = DataLoader(test_set, batch_size=FLAGS.batch_size, shuffle=True, num_workers=1)
+        
+    # TODO: change to work properly with Convolutional architecture
     if FLAGS.encoder_hidden_units:
         encoder_hidden_units = FLAGS.encoder_hidden_units.split(",")
         encoder_hidden_units = [int(dnn_hidden_unit_) for dnn_hidden_unit_ in encoder_hidden_units]
@@ -324,10 +345,6 @@ if __name__=='__main__':
     else:
         decoder_hidden_units = []
     
-    
-    dnn_input_units = X_test.shape[-1]
-    dnn_output_units = num_classes
-
     main()
 
     print_flags(FLAGS)

@@ -1,0 +1,100 @@
+% !TEX root = ../main.tex
+%
+% ------------------------------------  --> cover title page
+\begin{titlepage}
+	\pdfbookmark[0]{Cover}{Cover}
+	\flushright
+	\hfill
+	\vfill
+	{\LARGE\thesisTitle \par}
+	\rule[5pt]{\textwidth}{.4pt} \par
+	{\Large\thesisName}
+	\vfill
+	\textit{\large\thesisDate} \\
+	Version: \thesisVersion
+\end{titlepage}
+
+
+% ------------------------------------  --> main title page
+\begin{titlepage}
+	\newcommand{\HRule}{\rule{\linewidth}{0.5mm}} % Defines a new command for horizontal lines, change thickness here
+	\pdfbookmark[0]{Titlepage}{Titlepage}
+%	\tgherosfont
+	\centering
+	
+	\begin{figure}[h!]
+		\centerline{\psfig{file=UvA_logo/uvalogo_regular_p_en.eps,width=1.\textwidth}}
+%	\includegraphics[width=1\textwidth]{UvA_logo/uvalogo_regular_p_en} \\ %[2mm]
+	\end{figure}
+	
+	\vspace{2 cm} 
+	\large\textsc{\thesisProgramme} \\
+	\large\textsc{Master Thesis} 
+	
+	\HRule\\[0.4cm]
+	{\Large
+%		\color{ctcolortitle}
+		\textbf{\textsc{\thesisTitle}} 
+	\\ [10pt]
+	}
+	{\large \textsc{\thesisSubject} \\}
+	
+	\HRule\\[1.5cm]
+	
+	{\small by}  \\
+	{\Large \textsc{\thesisName}} \\
+	{\small \thesisID} \\
+	
+	\vspace{1 cm}
+	
+	\thesisDate \\
+	
+	\vspace{3 cm} 
+	
+	\begin{minipage}{.4\textwidth}
+		\begin{flushleft}
+			\textit{Assessor}: \\
+			{\Large \textsc{\thesisFirstReviewer}} \\
+			{\small \textsc{\thesisFirstReviewerDepartment}} \\[-1mm]
+			{\small \textsc{\thesisFirstReviewerUniversity}}
+		\end{flushleft}
+	\end{minipage} %\\[5mm]
+	~
+	\begin{minipage}{.4\textwidth}
+		\begin{flushright}
+		\textit{Supervisor}: \\
+		{\Large \textsc{\thesisFirstSupervisor}} \\
+		{\small \textsc{\thesisFirstSupervisorDepartment}} \\[-1mm]
+		{\small \textsc{\thesisFirstSupervisorUniversity}}
+		\end{flushright}
+	\end{minipage} 
+	\\[10mm]
+
+	\vfill\vfill
+	
+	\textsc{\thesisUniversityInstitute} \\
+	\textit{\thesisUniversityGroup} \\
+	
+	
+
+\end{titlepage}
+
+
+% ------------------------------------  --> lower title back for single page layout
+\hfill
+\vfill
+{
+	\small
+	\textbf{\thesisName} \\
+	\textit{\thesisTitle} \\
+	\thesisSubject \\
+	\thesisDate \\
+	Examiner: \thesisFirstReviewer\\
+	Supervisor: \thesisFirstSupervisor \\[1.5em]
+	\textbf{\thesisUniversity} \\
+	\textit{\thesisUniversityGroup} \\
+	\thesisUniversityInstitute \\
+%	\thesisUniversityDepartment \\
+	\thesisUniversityStreetAddress \\
+	\thesisUniversityPostalCode\ and \thesisUniversityCity
+}

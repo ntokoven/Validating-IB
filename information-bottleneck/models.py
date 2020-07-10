@@ -24,7 +24,9 @@ class MIEstimator(nn.Module):
     def forward(self, x1, x2):
         pos = self.net(torch.cat([x1, x2], 1)) #Positive Samples 
         neg = self.net(torch.cat([torch.roll(x1, 1, 0), x2], 1)) #Predictions for shuffled (negative) samples from p(z1)p(z2)
-        return -softplus(-pos).mean() - softplus(neg).mean(), pos.mean() - neg.exp().mean() + 1 # I_NWJ, I_JS
+        # return -softplus(-pos).mean() - softplus(neg).mean(), pos.mean() - neg.exp().mean() + 1 # I_NWJ, I_JS
+        return -softplus(-pos) - softplus(neg), pos - neg.exp() + 1 # I_NWJ, I_JS
+
 
 class Flatten(torch.nn.Module):
     def forward(self, x):
@@ -112,7 +114,6 @@ class MLP(nn.Module):
     def __init__(self, x_dim, z_dims, dec_dims, y_dim, FLAGS):
         super(MLP, self).__init__()
 
-        p_dropout, neg_slope = FLAGS.p_dropout, FLAGS.neg_slope
         self.K = z_dims[-1]
         self.layers = []
         self.enc_num_neurons = [x_dim] + z_dims 
@@ -122,9 +123,9 @@ class MLP(nn.Module):
 
         for i in range(len(self.enc_num_neurons) - 2):
             self.layers.append(nn.Linear(self.enc_num_neurons[i], self.enc_num_neurons[i+1]))
-            if p_dropout != 0:
-                self.layers.append(nn.Dropout(p_dropout))
             self.layers.append(nn.LeakyReLU(negative_slope=FLAGS.neg_slope))
+            if FLAGS.p_dropout != 0:
+                self.layers.append(nn.Dropout(FLAGS.p_dropout))
             self.models['Linear{}'.format(i)] = nn.Sequential(*self.layers)
         self.layers.append(nn.Linear(self.enc_num_neurons[i+1], self.K))
         self.models['Linear{}'.format(i+1)] = nn.Sequential(*self.layers)
@@ -133,9 +134,9 @@ class MLP(nn.Module):
         self.dec_layers = []
         for i in range(len(self.dec_num_neurons) - 2):
             self.dec_layers.append(nn.Linear(self.dec_num_neurons[i], self.dec_num_neurons[i+1]))
-            if p_dropout != 0:
-                self.dec_layers.append(nn.Dropout(p_dropout))
             self.dec_layers.append(nn.LeakyReLU(negative_slope=FLAGS.neg_slope))
+            if FLAGS.p_dropout != 0:
+                self.dec_layers.append(nn.Dropout(FLAGS.p_dropout))
             self.models['Linear{}'.format(i)] = nn.Sequential(*self.layers)
         
         self.dec_layers.append(nn.Linear(self.dec_num_neurons[-2], y_dim))
@@ -160,32 +161,32 @@ class VAE(nn.Module):
             print('Building VAE with Convolutional architecture')
             self.encode = nn.Sequential(
                 nn.Conv2d(3, 64, 3, stride=1, padding=1), 
-                nn.BatchNorm2d(64), 
+                # nn.BatchNorm2d(64), 
                 nn.ReLU(),
                 nn.MaxPool2d(3, stride=2, padding=1),
                 nn.Conv2d(64, 128, 3, stride=1, padding=1),
-                nn.BatchNorm2d(128),
+                # nn.BatchNorm2d(128),
                 nn.ReLU(),
                 nn.MaxPool2d(3, stride=2, padding=1),
                 nn.Conv2d(128, 256, 3, stride=1, padding=1),
-                nn.BatchNorm2d(256), 
+                # nn.BatchNorm2d(256), 
                 nn.ReLU(),
                 nn.Conv2d(256, 256, 3, stride=1, padding=1),
-                nn.BatchNorm2d(256), 
+                # nn.BatchNorm2d(256), 
                 nn.ReLU(),
                 nn.MaxPool2d(3, stride=2, padding=1),
                 nn.Conv2d(256, 512, 3, stride=1, padding=1),
-                nn.BatchNorm2d(512),
+                # nn.BatchNorm2d(512),
                 nn.ReLU(),
                 nn.Conv2d(512, 512, 3, stride=1, padding=1),
-                nn.BatchNorm2d(512), 
+                # nn.BatchNorm2d(512), 
                 nn.ReLU(),
                 nn.MaxPool2d(3, stride=2, padding=1),
                 nn.Conv2d(512, 512, 3, stride=1, padding=1),
-                nn.BatchNorm2d(512), 
+                # nn.BatchNorm2d(512), 
                 nn.ReLU(),
                 nn.Conv2d(512, 512, 3, stride=1, padding=1),
-                nn.BatchNorm2d(512), 
+                # nn.BatchNorm2d(512), 
                 nn.ReLU(),
                 nn.MaxPool2d(3, stride=2, padding=1),
                 nn.Flatten(),
@@ -195,6 +196,8 @@ class VAE(nn.Module):
             for i in range(len(self.num_neurons) - 2):
                 self.layers.append(nn.Linear(self.num_neurons[i], self.num_neurons[i+1]))
                 self.layers.append(nn.LeakyReLU(negative_slope=FLAGS.neg_slope))
+                if FLAGS.p_dropout != 0:
+                    self.layers.append(nn.Dropout(FLAGS.p_dropout))
             self.layers.append(nn.Linear(self.num_neurons[i+1], 2 * self.K))
 
             self.encode = nn.Sequential(*self.layers)
@@ -204,6 +207,8 @@ class VAE(nn.Module):
         for i in range(len(self.dec_num_neurons) - 2):
             self.dec_layers.append(nn.Linear(self.dec_num_neurons[i], self.dec_num_neurons[i+1]))
             self.dec_layers.append(nn.LeakyReLU(negative_slope=FLAGS.neg_slope))
+            if FLAGS.p_dropout != 0:
+                self.dec_layers.append(nn.Dropout(FLAGS.p_dropout))
         self.dec_layers.append(nn.Linear(self.dec_num_neurons[-2], y_dim))
         
         self.decode = nn.Sequential(*self.dec_layers)
@@ -213,7 +218,7 @@ class VAE(nn.Module):
 
         statistics = self.encode(x)
         mu = statistics[:,:self.K]
-        std = softplus(statistics[:,self.K:]-5,beta=1)
+        std = softplus(statistics[:,self.K:]-5,beta=1) + 1e-7
 
         encoding = self.reparametrize_n(mu, std, num_sample)
         logit = self.decode(encoding)

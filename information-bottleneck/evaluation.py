@@ -9,9 +9,11 @@ import torchvision.transforms.functional as F
 class EmbeddedDataset:
     BLOCK_SIZE = 256
 
-    def __init__(self, base_dataset, encoder, enc_type, cuda=True):
+    def __init__(self, base_dataset, encoder, enc_type, eval_num_samples, test=False, cuda=True):
         if cuda:
             encoder = encoder.cuda()
+        self.test = test
+        self.eval_num_samples = eval_num_samples
         self.means, self.target = self._embed(encoder, enc_type, base_dataset, cuda)
 
     def _embed(self, encoder, enc_type, dataset, cuda):
@@ -31,18 +33,25 @@ class EmbeddedDataset:
                 if cuda:
                     x = x.cuda()
                     y = y.cuda()
+                embeddings = []
                 if enc_type == 'VAE':
-                    (mu, _), _, p_z_given_x = encoder(x)
-                    reps.append(mu.detach()) #to sample mean (reduced variance). works for mnist12k to show the superiority of vib with higher betas
-                    # reps.append(p_z_given_x.detach()) # more informative variance. Honest solution
-
+                    for i in range(self.eval_num_samples):
+                        (mu, _), _, p_z_given_x = encoder(x)
+                        embeddings.append(p_z_given_x.unsqueeze(1))
+                    
+                    if self.test:
+                        reps.append(mu.detach()) #to sample mean (reduced variance, less noise - more accurate estimates of quality). works for mnist12k to show the superiority of vib with higher betas
+                    elif self.eval_num_samples == 1:
+                        reps.append(p_z_given_x.squeeze(1).detach()) # more informative variance. Honest solution - we use it for training the 
+                    else:
+                        embeddings = torch.cat(embeddings, 1)
+                        reps.append(embeddings.mean(1).detach())
                 else: 
                     p_z_given_x = encoder(x)
                     reps.append(p_z_given_x.detach())
                 
                 ys.append(y)
             ys = torch.cat(ys, 0)
-
         encoder.train()
         return reps, ys
 
@@ -112,9 +121,9 @@ def build_matrix(dataset):
 
     return xs.data.numpy(), ys.data.numpy()
 
-def evaluate(encoder, enc_type, train_on, test_on, cuda):
-    embedded_train = EmbeddedDataset(train_on, encoder, enc_type, cuda=cuda)
-    embedded_test = EmbeddedDataset(test_on, encoder, enc_type, cuda=cuda)
+def evaluate(encoder, enc_type, train_on, test_on, eval_num_samples, cuda):
+    embedded_train = EmbeddedDataset(train_on, encoder, enc_type, eval_num_samples, cuda=cuda)
+    embedded_test = EmbeddedDataset(test_on, encoder, enc_type, eval_num_samples, test=True, cuda=cuda)
     return train_and_evaluate_linear_model(embedded_train, embedded_test)
 
 # Get partition of dataset into overlapping training subsets of labeled examples (subset_i \in subset_j for i, j \in every i < j)
