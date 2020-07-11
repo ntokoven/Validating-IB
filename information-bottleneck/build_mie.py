@@ -23,6 +23,11 @@ from train import train_encoder, train_encoder_VIB
 
 def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer=''):
     
+    def prun_quantile(x, k):
+        x_prun = x[x < np.quantile(x, 1 - k/100)]
+        x_prun = x_prun[x_prun > np.quantile(x, k/100)]
+        return x_prun
+
     if not mie_on_test:
         loader = train_loader
     else:
@@ -99,14 +104,10 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer
             mi_over_epoch['X'] = np.nan_to_num(np.array(mi_over_epoch['X']))
             mi_over_epoch['Y'] = np.nan_to_num(np.array(mi_over_epoch['Y']))
             
-            # Discard top and bottom 5% to avoid numerical outliers
-            tmp = mi_over_epoch['X'][mi_over_epoch['X'] < np.quantile(mi_over_epoch['X'], 1 - FLAGS.mie_k_discard/100)]
-            tmp = tmp[tmp > np.quantile(mi_over_epoch['X'], FLAGS.mie_k_discard/100)]
-            mi_over_epoch['X'] = tmp
+            # Discard top and bottom k% to avoid numerical outliers
+            mi_over_epoch['X'] = proon_quantile(mi_over_epoch['X'], FLAGS.mie_k_discard)
+            mi_over_epoch['Y'] = proon_quantile(mi_over_epoch['Y'], FLAGS.mie_k_discard)
 
-            tmp = mi_over_epoch['Y'][mi_over_epoch['Y'] < np.quantile(mi_over_epoch['Y'], 1 - FLAGS.mie_k_discard/100)]
-            tmp = tmp[tmp > np.quantile(mi_over_epoch['Y'], FLAGS.mie_k_discard/100)]
-            mi_over_epoch['Y'] = tmp
 
             if np.mean(mi_over_epoch['X']) > max_MI_x:
                 max_MI_x = np.mean(mi_over_epoch['X'])
@@ -119,7 +120,6 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer
 
                 print('#'*30)
                 print('Step - ', epoch)
-                print('Beta - ', beta)
                     
                 if epoch >= 2:
                     delta_x = mi_mean_est_all['X'][-2] - mi_mean_est_all['X'][-1]
@@ -175,20 +175,17 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer
         
         X_test = X_test.flatten(start_dim=1).to(device)
         y_test = onehot_encoding(y_test, device=device).float()
-        # breakpoint()
-        mi_estimation_X_final = mi_estimator_X(X_test, z_test)[1]#.mean()
+
+        mi_gradient_X_final, mi_estimation_X_final = mi_estimator_X(X_test, z_test)
         mi_estimation_X_final = np.nan_to_num(mi_estimation_X_final.cpu().data.numpy())
+        mi_estimation_X_final = prun_quantile(mi_estimation_X_final, FLAGS.mie_k_discard)
+        mi_estimation_X_final = mi_estimation_X_final.mean()
 
-        mi_estimation_Y_final = mi_estimator_Y(z_test, y_test)[1]#.mean()
+        mi_gradient_Y_final, mi_estimation_Y_final = mi_estimator_Y(z_test, y_test)
         mi_estimation_Y_final = np.nan_to_num(mi_estimation_Y_final.cpu().data.numpy())
+        mi_estimation_Y_final = prun_quantile(mi_estimation_Y_final, FLAGS.mie_k_discard)
+        mi_estimation_Y_final = mi_estimation_Y_final.mean()
 
-        tmp = mi_estimation_X_final[mi_estimation_X_final < np.quantile(mi_estimation_X_final, 1 - FLAGS.mie_k_discard/100)]
-        tmp = tmp[tmp > np.quantile(mi_estimation_X_final, FLAGS.mie_k_discard/100)]
-        mi_estimation_X_final = tmp.mean()
-
-        tmp = mi_estimation_Y_final[mi_estimation_Y_final < np.quantile(mi_estimation_Y_final, 1 - FLAGS.mie_k_discard/100)]
-        tmp = tmp[tmp > np.quantile(mi_estimation_Y_final, FLAGS.mie_k_discard/100)]
-        mi_estimation_Y_final = tmp.mean()
     print('ESTIMATIONS ', mi_estimation_X_final, mi_estimation_Y_final)
     return mi_estimation_X_final, mi_estimation_Y_final, mi_estimator_X, mi_estimator_Y
 
