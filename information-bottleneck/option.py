@@ -81,6 +81,8 @@ def get_option(parser):
                       help='Number of samples to evaluate the encoder (if 0, then using mean of the posterior')
     parser.add_argument('--save_encoder', type = bool,
                       help='Need tp save trained encoder')
+    parser.add_argument('--unit_sigma', type = bool,
+                      help='Need to fix sigma q(z|y) to 1')
 
     # TODO: split arguments for MIE and GC separately
     

@@ -114,8 +114,10 @@ def train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_l
     
     criterion = nn.CrossEntropyLoss()
     if FLAGS.use_of_ceb:
-        # q_z_given_y = nn.Sequential(nn.Linear(dnn_output_units, 2 * z_dim)).to(device)
-        q_z_given_y = nn.Sequential(nn.Linear(dnn_output_units, z_dim)).to(device)
+        if FLAGS.unit_sigma:
+            q_z_given_y = nn.Sequential(nn.Linear(dnn_output_units, z_dim)).to(device)
+        else:
+            q_z_given_y = nn.Sequential(nn.Linear(dnn_output_units, 2 * z_dim)).to(device)
 
         optimizer = optim.Adam([
                     {'params': model.parameters(), 'lr': FLAGS.learning_rate,'betas': (0.9,0.999), 'weight_decay': FLAGS.weight_decay}, 
@@ -152,21 +154,15 @@ def train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_l
                 info_loss = - 0.5 * (1 + 2 * std.log() - mu.pow(2) - std.pow(2)).sum(dim=1).mean().div(math.log(2)) # KL(p(Z|x)||r(Z)) = KL(N(mu, std)||N(0, 1))
             elif FLAGS.use_of_ceb:
                 y = onehot_encoding(y_train, device=device).float()
-                '''
+                # '''
                 statistics_y = q_z_given_y(y) 
-                mu_y = statistics_y[:,:z_dim]
-                std_y = softplus(statistics_y[:,z_dim:]-5,beta=1) + 1e-7
-<<<<<<< HEAD
-                # breakpoint()
-                '''
-=======
-                # '''
->>>>>>> parent of 2aafc05... update july 15
-                mu_y = q_z_given_y(y)
-                std_y = torch.ones_like(std) # experimenting with stability
-                # eps = model.reparametrize_n(torch.zeros_like(mu), torch.ones_like(std), 1) # get random noise
-                # '''
-                
+                if FLAGS.unit_sigma:
+                    mu_y = q_z_given_y(y)
+                    std_y = torch.ones_like(std) # fixing sigma q(z|y) to 1
+                else:
+                    mu_y = statistics_y[:,:z_dim]
+                    std_y = softplus(statistics_y[:,z_dim:]-5,beta=1) + 1e-7
+                    
                 '''
                 # Original CEB loss formulation
                 
@@ -175,6 +171,7 @@ def train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_l
                 info_loss = 0.5 / (1 - beta) * ((mu - mu_y) @ (mu - mu_y + 2 * eps).t()).sum(1).mean()  # notice the reparametrization of beta
                 '''
                 p = torch.distributions.Normal(mu, std)
+                print(mu.shape, std.shape, mu_y.shape, std_y.shape)
                 q = torch.distributions.Normal(mu_y, std_y)
 
                 # sample_x = std * eps + mu
@@ -222,13 +219,13 @@ def train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_l
                     test_info_loss = - 0.5 * (1 + 2 * std.log() - mu.pow(2) - std.pow(2)).sum(dim=1).mean().div(math.log(2)) # KL(p(Z|x), r(Z))
                 elif FLAGS.use_of_ceb:
                     y = onehot_encoding(y_test, device=device).float()
-                    '''
                     statistics_y = q_z_given_y(y) 
-                    mu_y = statistics_y[:,:z_dim]
-                    std_y = softplus(statistics_y[:,z_dim:]-5,beta=1) + 1e-7
-                    '''
-                    mu_y = q_z_given_y(y)
-                    std_y = torch.ones_like(std)
+                    if FLAGS.unit_sigma:
+                        mu_y = q_z_given_y(y)
+                        std_y = torch.ones_like(std) # fixing sigma q(z|y) to 1
+                    else:
+                        mu_y = statistics_y[:,:z_dim]
+                        std_y = softplus(statistics_y[:,z_dim:]-5,beta=1) + 1e-7
                     p = torch.distributions.Normal(mu, std)
                     q = torch.distributions.Normal(mu_y, std_y)
                     sample_x = model.reparametrize_n(mu, std, 1)
