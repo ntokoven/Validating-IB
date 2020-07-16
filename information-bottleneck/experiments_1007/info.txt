@@ -1,0 +1,2 @@
+Experimentation on MIE for VIB and CEB without Batch Norm to find the transition point.
+The best one so far - beta=5875e-6 
