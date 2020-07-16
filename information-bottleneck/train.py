@@ -156,7 +156,12 @@ def train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_l
                 statistics_y = q_z_given_y(y) 
                 mu_y = statistics_y[:,:z_dim]
                 std_y = softplus(statistics_y[:,z_dim:]-5,beta=1) + 1e-7
+<<<<<<< HEAD
+                # breakpoint()
+                '''
+=======
                 # '''
+>>>>>>> parent of 2aafc05... update july 15
                 mu_y = q_z_given_y(y)
                 std_y = torch.ones_like(std) # experimenting with stability
                 # eps = model.reparametrize_n(torch.zeros_like(mu), torch.ones_like(std), 1) # get random noise

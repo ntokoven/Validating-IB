@@ -28,7 +28,7 @@ def main():
     # '''
     # functionality used to fine-tune the experiments without retraining encoders
     if FLAGS.use_pretrain and os.path.exists('pretrained_encoders/enc_%s_%sepochs.pt' % ('ceb' if FLAGS.use_of_ceb else 'vib', FLAGS.num_epochs)):
-        print('Loading pretrained by %s for %s epochs' % ('ceb' if FLAGS.use_of_ceb else 'vib', FLAGS.num_epochs))
+        print('\n\nLoading pretrained by %s for %s epochs' % ('ceb' if FLAGS.use_of_ceb else 'vib', FLAGS.num_epochs))
         if FLAGS.cifar10:
             X_test, y_test = build_test_set(test_loader, device, flatten=False)
         else:
@@ -155,6 +155,7 @@ def main():
 
 if __name__=='__main__':
     # Command line arguments
+
     parser = argparse.ArgumentParser()
     FLAGS, unparsed = get_option(parser)
 

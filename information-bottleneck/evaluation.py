@@ -35,17 +35,14 @@ class EmbeddedDataset:
                     y = y.cuda()
                 embeddings = []
                 if enc_type == 'VAE':
-                    for i in range(self.eval_num_samples):
-                        (mu, _), _, p_z_given_x = encoder(x)
-                        embeddings.append(p_z_given_x.unsqueeze(1))
-                    
-                    if self.test:
-                        reps.append(mu.detach()) #to sample mean (reduced variance, less noise - more accurate estimates of quality). works for mnist12k to show the superiority of vib with higher betas
-                    elif self.eval_num_samples == 1:
-                        reps.append(p_z_given_x.squeeze(1).detach()) # more informative variance. Honest solution - we use it for training the 
+                    (mu, std), _, p_z_given_x = encoder(x)
+                    if self.test or self.eval_num_samples == 0:
+                        reps.append(mu.detach()) #to sample mean (reduced variance, less noise - more accurate estimates of quality)
                     else:
-                        embeddings = torch.cat(embeddings, 1)
-                        reps.append(embeddings.mean(1).detach())
+                        samples = encoder.reparametrize_n(mu, std, self.eval_num_samples)
+                        if samples.dim() == 2: #meaning that we use only 1 sample
+                            samples = samples.unsqueeze(0)
+                        reps.append(samples.mean(0).detach())
                 else: 
                     p_z_given_x = encoder(x)
                     reps.append(p_z_given_x.detach())

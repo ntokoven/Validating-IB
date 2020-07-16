@@ -1,0 +1,2 @@
+Here are the results for mnist experiments GC, MIE on different distributions
+Need to produce gap for GC compared to 0, reevaluate CEB, VIB, weight decay and dropout to see what produces best results in terms of GC with respect to compression cinstraints
