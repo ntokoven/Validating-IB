@@ -34,82 +34,88 @@ class Flatten(torch.nn.Module):
         batch_size = x.shape[0]
         return x.view(batch_size, -1)
 
-# Reduced VGG version
-class CNN(nn.Module):
+class Deterministic(nn.Module):
     
     def __init__(self, x_dim, z_dims, dec_dims, y_dim, FLAGS):
         #self.n_channels, self.n_classes = 3, 10
-        super(CNN, self).__init__()
+        super(Deterministic, self).__init__()
 
         p_dropout, neg_slope = FLAGS.p_dropout, FLAGS.neg_slope
         self.K = z_dims[-1]
         self.layers = []
-        self.enc_num_channels = [x_dim] + z_dims 
-        self.dec_num_channels = [self.K] + dec_dims + [y_dim]
+        self.enc_num_neurons = [x_dim] + z_dims 
+        self.dec_num_neurons = [self.K] + dec_dims + [y_dim]
         self.best_performance = 0
         self.models = {}
 
-        '''for i in range(len(self.enc_num_channels) - 2):
-            self.layers.append(nn.Linear(self.enc_num_channels[i], self.enc_num_channels[i+1]))
-            if p_dropout != 0:
-                self.layers.append(nn.Dropout(p_dropout))
-            self.layers.append(nn.LeakyReLU(negative_slope=FLAGS.neg_slope))
-            self.models['Linear{}'.format(i)] = nn.Sequential(*self.layers)
-        self.layers.append(nn.Linear(self.enc_num_channels[i+1], self.K))
-        self.models['Linear{}'.format(i+1)] = nn.Sequential(*self.layers)
-        self.encode = self.models['Linear{}'.format(i+1)]'''
-        
-        self.encode = nn.Sequential(
-            nn.Conv2d(3, 64, 3, stride=1, padding=1), 
-            nn.ReLU(),
-            # nn.BatchNorm2d(64), 
-            nn.MaxPool2d(3, stride=2, padding=1),
-            nn.Conv2d(64, 128, 3, stride=1, padding=1),
-            nn.ReLU(),
-            # nn.BatchNorm2d(128), 
-            nn.MaxPool2d(3, stride=2, padding=1),
-            nn.Conv2d(128, 256, 3, stride=1, padding=1),
-            nn.ReLU(),
-            # nn.BatchNorm2d(256), 
-            nn.Conv2d(256, 256, 3, stride=1, padding=1),
-            nn.ReLU(),
-            # nn.BatchNorm2d(256), 
-            nn.MaxPool2d(3, stride=2, padding=1),
-            nn.Conv2d(256, 512, 3, stride=1, padding=1),
-            nn.ReLU(),
-            # nn.BatchNorm2d(512), 
-            nn.Conv2d(512, 512, 3, stride=1, padding=1),
-            nn.ReLU(),
-            # nn.BatchNorm2d(512), 
-            nn.MaxPool2d(3, stride=2, padding=1),
-            nn.Conv2d(512, 512, 3, stride=1, padding=1),
-            nn.ReLU(),
-            # nn.BatchNorm2d(512), 
-            nn.Conv2d(512, 512, 3, stride=1, padding=1),
-            nn.ReLU(),
-            # nn.BatchNorm2d(512), 
-            nn.MaxPool2d(3, stride=2, padding=1),
-            nn.Flatten(),
-            nn.Linear(512, self.K))
+        if FLAGS.cifar10:
+            self.encode = nn.Sequential(
+                nn.Conv2d(3, 64, 3, stride=1, padding=1), 
+                nn.ReLU(),
+                # nn.BatchNorm2d(64), 
+                nn.MaxPool2d(3, stride=2, padding=1),
+                nn.Dropout(FLAGS.p_dropout),
+                nn.Conv2d(64, 128, 3, stride=1, padding=1),
+                nn.ReLU(),
+                # nn.BatchNorm2d(128), 
+                nn.MaxPool2d(3, stride=2, padding=1),
+                nn.Dropout(FLAGS.p_dropout),
+                nn.Conv2d(128, 256, 3, stride=1, padding=1),
+                nn.ReLU(),
+                # nn.BatchNorm2d(256), 
+                nn.Dropout(FLAGS.p_dropout),
+                nn.Conv2d(256, 256, 3, stride=1, padding=1),
+                nn.ReLU(),
+                # nn.BatchNorm2d(256), 
+                nn.MaxPool2d(3, stride=2, padding=1),
+                nn.Dropout(FLAGS.p_dropout),
+                nn.Conv2d(256, 512, 3, stride=1, padding=1),
+                nn.ReLU(),
+                # nn.BatchNorm2d(512), 
+                nn.Conv2d(512, 512, 3, stride=1, padding=1),
+                nn.Dropout(FLAGS.p_dropout),
+                nn.ReLU(),
+                # nn.BatchNorm2d(512), 
+                nn.MaxPool2d(3, stride=2, padding=1),
+                nn.Dropout(FLAGS.p_dropout),
+                nn.Conv2d(512, 512, 3, stride=1, padding=1),
+                nn.ReLU(),
+                # nn.BatchNorm2d(512), 
+                nn.Conv2d(512, 512, 3, stride=1, padding=1),
+                nn.ReLU(),
+                # nn.BatchNorm2d(512), 
+                nn.MaxPool2d(3, stride=2, padding=1),
+                nn.Dropout(FLAGS.p_dropout),
+                nn.Flatten(),
+                nn.Linear(512, self.K))
+        else:
+            for i in range(len(self.enc_num_neurons) - 2):
+                self.layers.append(nn.Linear(self.enc_num_neurons[i], self.enc_num_neurons[i+1]))
+                self.layers.append(nn.LeakyReLU(negative_slope=FLAGS.neg_slope))
+                if FLAGS.p_dropout != 0:
+                    self.layers.append(nn.Dropout(FLAGS.p_dropout))
+                self.models['Linear{}'.format(i)] = nn.Sequential(*self.layers)
+            self.layers.append(nn.Linear(self.enc_num_neurons[i+1], self.K))
+            self.models['Linear{}'.format(i+1)] = nn.Sequential(*self.layers)
+            self.encode = self.models['Linear{}'.format(i+1)]
         
         print('Encoder architecture', self.encode)
 
+        self.dec_num_neurons = [self.K] + dec_dims + [y_dim]
         self.dec_layers = []
-        for i in range(len(self.dec_num_channels) - 2):
-            self.dec_layers.append(nn.Linear(self.dec_num_channels[i], self.dec_num_channels[i+1]))
-            if p_dropout != 0:
-                self.dec_layers.append(nn.Dropout(p_dropout))
+        for i in range(len(self.dec_num_neurons) - 2):
+            self.dec_layers.append(nn.Linear(self.dec_num_neurons[i], self.dec_num_neurons[i+1]))
             self.dec_layers.append(nn.LeakyReLU(negative_slope=FLAGS.neg_slope))
-            self.models['Linear{}'.format(i)] = nn.Sequential(*self.layers)
-        
-        self.dec_layers.append(nn.Linear(self.dec_num_channels[-2], y_dim))
+            if FLAGS.p_dropout != 0:
+                self.dec_layers.append(nn.Dropout(FLAGS.p_dropout))
+        self.dec_layers.append(nn.Linear(self.dec_num_neurons[-2], y_dim))
         
         self.decode = nn.Sequential(*self.dec_layers)
-        print('Decoder architecture', self.decode)
 
-    def forward(self, x):
+    def forward(self, x): 
         out = self.decode(self.encode(x))
         return out
+        
 
 class MLP(nn.Module):
     def __init__(self, x_dim, z_dims, dec_dims, y_dim, FLAGS):
@@ -149,9 +155,9 @@ class MLP(nn.Module):
         out = self.decode(self.encode(x))
         return out
 
-class VAE(nn.Module):
+class Stochastic(nn.Module):
     def __init__(self, x_dim, z_dims, dec_dims, y_dim, FLAGS):
-        super(VAE, self).__init__()
+        super(Stochastic, self).__init__()
 
         self.CEB = FLAGS.use_of_ceb
         self.K = z_dims[-1]
@@ -159,7 +165,7 @@ class VAE(nn.Module):
 
         self.num_neurons = [x_dim] + z_dims
         if FLAGS.cifar10:
-            print('Building VAE with Convolutional architecture')
+            print('Building VAE with Convolutional architecture to work with CIFAR10')
             #VGG11
             self.encode = nn.Sequential(
                 nn.Conv2d(3, 64, 3, stride=1, padding=1), 

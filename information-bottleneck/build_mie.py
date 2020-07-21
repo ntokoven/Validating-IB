@@ -18,7 +18,7 @@ from data_utils import *
 from evaluation import *
 from helper import *
 from option import get_option
-from models import VAE, MLP, MIEstimator
+from models import Stochastic, Deterministic, MLP, MIEstimator
 from train import train_encoder, train_encoder_VIB
 
 def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer=''):
@@ -40,7 +40,7 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer
     # X_test, y_test = X_test[:len(X_test)//5], y_test[:len(y_test)//5]
     
     with torch.no_grad():
-        if FLAGS.enc_type == 'VAE':
+        if FLAGS.enc_type == 'stoch':
             (_, _), _, z_test = encoder(X_test)
             z_test = z_test.detach().to(device)
         else:
@@ -69,7 +69,7 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer
                 X, y = X.flatten(start_dim=1).to(device), y.float().to(device)
             else: 
                 X, y = X.float().to(device), y.float().to(device)
-            if FLAGS.enc_type == 'VAE':
+            if FLAGS.enc_type == 'stoch':
                 (_, _), _, z = encoder(X.float())
             else:
                 z = encoder(X)
@@ -105,8 +105,8 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer
             mi_over_epoch['Y'] = np.nan_to_num(np.array(mi_over_epoch['Y']))
             
             # Discard top and bottom k% to avoid numerical outliers
-            mi_over_epoch['X'] = proon_quantile(mi_over_epoch['X'], FLAGS.mie_k_discard)
-            mi_over_epoch['Y'] = proon_quantile(mi_over_epoch['Y'], FLAGS.mie_k_discard)
+            mi_over_epoch['X'] = prun_quantile(mi_over_epoch['X'], FLAGS.mie_k_discard)
+            mi_over_epoch['Y'] = prun_quantile(mi_over_epoch['Y'], FLAGS.mie_k_discard)
 
 
             if np.mean(mi_over_epoch['X']) > max_MI_x:
@@ -147,13 +147,17 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer
                 print('Max I_est(Z, Y) - %s' % max_MI_y)
                 print('Elapsed time training MI for %s: %s' % (layer, time.time() - start_time))
                 print('#'*30,'\n')
+                
                 mi_df = pd.DataFrame.from_dict(mi_mean_est_all)
                 if not os.path.exists(FLAGS.result_path+'/mie_train_values'):
                     os.makedirs(FLAGS.result_path+'/mie_train_values')
                 mi_df.to_csv(FLAGS.result_path+'/mie_train_values/mie_%s_%s_l%s_s%s.csv' % (FLAGS.enc_type.lower(), 'test' if mie_on_test else 'train', layer, seed), sep=' ')
                 
                 plot_mie_curve(FLAGS, mi_df, layer, seed)
-
+            
+            if epoch >= 500 and max_MI_x < 1e-1:
+                print('No Mutual Information preserved by the model')
+                break
             if epoch >= FLAGS.w_size and np.mean(mi_mean_est_all['X'][-2 * FLAGS.w_size:-FLAGS.w_size]) > np.mean(mi_mean_est_all['X'][-FLAGS.w_size:]) - FLAGS.mie_converg_bound:
                 train_x = False
 
@@ -163,11 +167,12 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer
                 if train_x == False and train_y == False:
                     print('Convergence criteria successfully satisified.\n\n')
                     break
+            
 
     plot_mie_curve(FLAGS, mi_df, layer, seed)  
 
     with torch.no_grad():
-        if FLAGS.enc_type == 'VAE':
+        if FLAGS.enc_type == 'stoch':
             (_, _), _, z_test = encoder(X_test)
             z_test = z_test.detach().to(device)
         else:
@@ -281,6 +286,11 @@ if __name__=='__main__':
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     cuda = torch.cuda.is_available()
+    
+    if FLAGS.dataset == 'cifar10':
+        FLAGS.cifar10 = True
+    elif FLAGS.dataset == 'mnist12k':
+        FLAGS.mnist12k = True
 
     # If whitening helps adjust setting to apply also to weight_decay 0.
     # For now should manually set flag to True
@@ -289,7 +299,14 @@ if __name__=='__main__':
         FLAGS.whiten_z = True
 
     if FLAGS.use_of_vib or FLAGS.use_of_ceb:
-        FLAGS.enc_type = 'VAE'
+        FLAGS.enc_type = 'stoch'
+    
+    if FLAGS.enc_type != 'stoch':
+        print('Should be here')
+        FLAGS.enc_type = 'determ'
+
+    if FLAGS.comment == 'unit':
+        FLAGS.unit_sigma = True
 
     if FLAGS.comment != '':
         FLAGS.result_path += '/%s' % FLAGS.comment

@@ -43,7 +43,7 @@ def get_option(parser):
                         help='Tightness of bound for the convergence criteria')
     parser.add_argument('--weight_decay', type = float, default = 0,
                       help='Value of weight decay applied to optimizer')
-    parser.add_argument('--num_epochs', type = int, default = 20,
+    parser.add_argument('--num_epochs', type = int, default = 50,
                         help='Number of epochs to do training')
     parser.add_argument('--mie_num_epochs', type = int, default = 100,
                         help='Max number of epochs to do MIE training')
@@ -77,14 +77,17 @@ def get_option(parser):
                       help='If need to perform custom split to get training subsets with different amount of labeled examples')
     parser.add_argument('--use_scheduler', type = bool,
                       help='Use Exponential Scheduler for beta')
-    parser.add_argument('--eval_num_samples', type = int, default = 1,
+    parser.add_argument('--eval_num_samples', type = int, default = 64,
                       help='Number of samples to evaluate the encoder (if 0, then using mean of the posterior')
     parser.add_argument('--save_encoder', type = bool,
-                      help='Need tp save trained encoder')
+                      help='Need to save trained encoder')
     parser.add_argument('--unit_sigma', type = bool,
                       help='Need to fix sigma q(z|y) to 1')
+    parser.add_argument('--dataset', type = str,
+                      help='Dataset to use: - cifar10 or mnist12k')
+    
 
-    # TODO: split arguments for MIE and GC separately
+
     
     FLAGS, unparsed = parser.parse_known_args()
     return FLAGS, unparsed

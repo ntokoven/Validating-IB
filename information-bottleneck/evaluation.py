@@ -34,7 +34,7 @@ class EmbeddedDataset:
                     x = x.cuda()
                     y = y.cuda()
                 embeddings = []
-                if enc_type == 'VAE':
+                if enc_type == 'stoch':
                     (mu, std), _, p_z_given_x = encoder(x)
                     if self.test or self.eval_num_samples == 0:
                         reps.append(mu.detach()) #to sample mean (reduced variance, less noise - more accurate estimates of quality)

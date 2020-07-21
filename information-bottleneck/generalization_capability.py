@@ -20,7 +20,7 @@ from evaluation import *
 from helper import *
 from option import get_option
 
-from models import VAE, MLP, MIEstimator
+from models import Stochastic, Deterministic, MLP, MIEstimator
 from train import train_encoder, train_encoder_VIB
 
 
@@ -38,14 +38,14 @@ def main():
         del(X_test, y_test)
         
         dnn_output_units = FLAGS.num_classes
-        if FLAGS.enc_type == 'CNN':
-            print('Building CNN')
-            Encoder = CNN(dnn_input_units, encoder_hidden_units, decoder_hidden_units, dnn_output_units, FLAGS).to(device)
-        elif FLAGS.enc_type =='VAE':
-            print('Building VAE')
-            Encoder = VAE(dnn_input_units, encoder_hidden_units, decoder_hidden_units, dnn_output_units, FLAGS).to(device) 
+        if FLAGS.enc_type == 'stoch':
+            print('\nBuilding stochastic encoder')
+            Encoder = Stochastic(dnn_input_units, encoder_hidden_units, decoder_hidden_units, dnn_output_units, FLAGS).to(device) 
+        elif FLAGS.enc_type == 'determ':
+            print('\nBuilding deterministic encoder')
+            Encoder = Deterministic(dnn_input_units, encoder_hidden_units, decoder_hidden_units, dnn_output_units, FLAGS).to(device)
         else:
-            print('Building MLP')
+            print('\nBuilding Vanilla MLP')
             Encoder = MLP(dnn_input_units, encoder_hidden_units, decoder_hidden_units, dnn_output_units, FLAGS).to(device)
         Encoder.load_state_dict(torch.load('pretrained_encoders/enc_%s_%sepochs.pt' % ('ceb' if FLAGS.use_of_ceb else 'vib', FLAGS.num_epochs)))
     else:
@@ -92,7 +92,7 @@ def main():
     else:
             train_set_to_split = train_set
     
-    path_to_subsets = 'label_partitions' + '/cifar10' if FLAGS.cifar10 else '/mnist'
+    path_to_subsets = 'label_partitions' + ('/cifar10' if FLAGS.cifar10 else '/mnist')
     if FLAGS.load_subsets:
         if not os.path.exists(path_to_subsets):
             time_start = time.time()
@@ -164,8 +164,20 @@ if __name__=='__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     cuda = torch.cuda.is_available()
 
+    if FLAGS.dataset == 'cifar10':
+        FLAGS.cifar10 = True
+    elif FLAGS.dataset == 'mnist12k':
+        FLAGS.mnist12k = True
+    
     if FLAGS.use_of_vib or FLAGS.use_of_ceb:
-        FLAGS.enc_type = 'VAE'
+        FLAGS.enc_type = 'stoch'
+    
+    if FLAGS.enc_type != 'stoch':
+        print('Should be here')
+        FLAGS.enc_type = 'determ'
+    
+    if FLAGS.comment == 'unit':
+        FLAGS.unit_sigma = True
 
     if FLAGS.comment != '':
         FLAGS.result_path += '/%s' % FLAGS.comment

@@ -10,7 +10,7 @@ from data_utils import *
 from evaluation import *
 from helper import *
 import cifar10_utils
-from models import CNN, VAE, MLP, MIEstimator
+from models import Stochastic, MLP, Deterministic, MIEstimator
 
 # Training deterministic encoder
 def train_encoder(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loader, test_loader, device):
@@ -27,12 +27,13 @@ def train_encoder(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loade
         print('\nWeight decay to be applied: ', FLAGS.weight_decay)
     if FLAGS.p_dropout != 0:
         print('\nApplying dropout with rate %s' % FLAGS.p_dropout)
-    if FLAGS.enc_type == 'CNN':
-        print('Building CNN')
-        model = CNN(dnn_input_units, encoder_hidden_units, decoder_hidden_units, dnn_output_units, FLAGS).to(device)
-    elif FLAGS.enc_type =='VAE':
-        print('Building VAE')
-        model = VAE(dnn_input_units, encoder_hidden_units, decoder_hidden_units, dnn_output_units, FLAGS).to(device) 
+
+    if FLAGS.enc_type =='stoch':
+        print('Building Stochastic %s Encoder' % ('CNN' if FLAGS.cifar10 else 'MLP'))
+        model = Stochastic(dnn_input_units, encoder_hidden_units, decoder_hidden_units, dnn_output_units, FLAGS).to(device) 
+    elif FLAGS.enc_type == 'determ':
+        print('Building Deterministic %s Encoder' % ('CNN' if FLAGS.cifar10 else 'MLP'))
+        model = Deterministic(dnn_input_units, encoder_hidden_units, decoder_hidden_units, dnn_output_units, FLAGS).to(device)
     else:
         print('Building MLP')
         model = MLP(dnn_input_units, encoder_hidden_units, decoder_hidden_units, dnn_output_units, FLAGS).to(device)
@@ -55,7 +56,7 @@ def train_encoder(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loade
                 X_train, y_train = X_train.to(device), y_train.to(device)
 
             optimizer.zero_grad()
-            if FLAGS.enc_type =='VAE':
+            if FLAGS.enc_type =='stoch':
                 (mu, std), out, z_train = model(X_train)
                 loss = criterion(out, y_train)
             else:
@@ -75,7 +76,7 @@ def train_encoder(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loade
                 print('\n'+'#'*30)
                 print('Training epoch - %d/%d' % (epoch+1, FLAGS.num_epochs))
 
-                if FLAGS.enc_type == 'VAE':
+                if FLAGS.enc_type == 'stoch':
                     (_, _), out_test, _ = model(X_test)
                     test_loss = criterion(out_test, y_test)
                 else:
@@ -106,11 +107,11 @@ def train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_l
     else:
         X_test, y_test = build_test_set(test_loader, device)
 
-    dnn_input_units = X_test.shape[1] if FLAGS.enc_type == 'CNN' else X_test.shape[-1]
+    dnn_input_units = X_test.shape[1] if FLAGS.cifar10 else X_test.shape[-1]
     z_dim = encoder_hidden_units[-1]
     dnn_output_units = FLAGS.num_classes
 
-    model = VAE(dnn_input_units, encoder_hidden_units, decoder_hidden_units, dnn_output_units, FLAGS).to(device)
+    model = Stochastic(dnn_input_units, encoder_hidden_units, decoder_hidden_units, dnn_output_units, FLAGS).to(device)
     
     criterion = nn.CrossEntropyLoss()
     if FLAGS.use_of_ceb:
@@ -154,7 +155,6 @@ def train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_l
                 info_loss = - 0.5 * (1 + 2 * std.log() - mu.pow(2) - std.pow(2)).sum(dim=1).mean().div(math.log(2)) # KL(p(Z|x)||r(Z)) = KL(N(mu, std)||N(0, 1))
             elif FLAGS.use_of_ceb:
                 y = onehot_encoding(y_train, device=device).float()
-                # '''
                 statistics_y = q_z_given_y(y) 
                 if FLAGS.unit_sigma:
                     mu_y = q_z_given_y(y)
@@ -171,7 +171,6 @@ def train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_l
                 info_loss = 0.5 / (1 - beta) * ((mu - mu_y) @ (mu - mu_y + 2 * eps).t()).sum(1).mean()  # notice the reparametrization of beta
                 '''
                 p = torch.distributions.Normal(mu, std)
-                print(mu.shape, std.shape, mu_y.shape, std_y.shape)
                 q = torch.distributions.Normal(mu_y, std_y)
 
                 # sample_x = std * eps + mu
@@ -182,13 +181,11 @@ def train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_l
             if np.isnan(class_loss.cpu().detach().item()) or np.isnan(info_loss.cpu().detach().item()):
                     print('NaN occured in the info loss: %s, %s' % (class_loss, info_loss))
                     print('Prev Loss class, info: %s, %s' % (prev_class_loss, prev_info_loss))
-                    print('Prev Statistics mu, std, mu_y, std_y: %s, %s, %s, %s' % (prev_mu, prev_std, prev_mu_y, prev_std_y))
+                    # print('Prev Statistics mu, std, mu_y, std_y: %s, %s, %s, %s' % (prev_mu, prev_std, prev_mu_y, prev_std_y))
                     return model.eval()
-                    #breakpoint()
-                    #info_loss = torch.zeros_like(class_loss)
             prev_class_loss, prev_info_loss = class_loss, info_loss
             if FLAGS.use_of_ceb:
-                pass #prev_mu, prev_std, prev_mu_y, prev_std_y = mu, std, mu_y, std_y
+                prev_mu, prev_std, prev_mu_y, prev_std_y = mu, std, mu_y, std_y
             else:
                 prev_mu, prev_std = mu, std
             total_loss = class_loss + beta * info_loss # H(p,q) + beta * KL(p(Z|x), r(Z))
