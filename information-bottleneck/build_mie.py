@@ -272,7 +272,7 @@ def main():
                     os.makedirs(FLAGS.result_path+'/estimator_models')
                 torch.save(MIE_X.state_dict(), FLAGS.result_path + '/estimator_models/mie_x_%s_%s_l%s_s%s.pt' % (FLAGS.enc_type.lower(), 'test' if FLAGS.mie_on_test else 'train', layer, seeds[i]))
                 torch.save(MIE_Y.state_dict(), FLAGS.result_path + '/estimator_models/mie_y_%s_%s_l%s_s%s.pt' % (FLAGS.enc_type.lower(), 'test' if FLAGS.mie_on_test else 'train', layer, seeds[i]))
-            
+                print('Saved models successfully ')
         
     print('Elapsed time - ', time.time() - start_time)
 
