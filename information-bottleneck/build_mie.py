@@ -35,9 +35,10 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer
     # Keep full training set for the final MI estimations (validation set)
     if FLAGS.cifar10:
         X_test, y_test = build_test_set(train_loader, device, flatten=False, each=5)
+    elif FLAGS.mnist12k:
+        X_test, y_test = build_test_set(train_loader, device, each=1)
     else:
         X_test, y_test = build_test_set(train_loader, device, each=5)
-    # X_test, y_test = X_test[:len(X_test)//5], y_test[:len(y_test)//5]
     
     with torch.no_grad():
         if FLAGS.enc_type == 'stoch':
@@ -69,6 +70,7 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer
                 X, y = X.flatten(start_dim=1).to(device), y.float().to(device)
             else: 
                 X, y = X.float().to(device), y.float().to(device)
+            
             if FLAGS.enc_type == 'stoch':
                 (_, _), _, z = encoder(X.float())
             else:
@@ -184,18 +186,23 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer
         mi_gradient_X_final, mi_estimation_X_final = mi_estimator_X(X_test, z_test)
         mi_estimation_X_final = np.nan_to_num(mi_estimation_X_final.cpu().data.numpy())
         mi_estimation_X_final = prun_quantile(mi_estimation_X_final, FLAGS.mie_k_discard)
-        mi_estimation_X_final = mi_estimation_X_final.mean()
 
         mi_gradient_Y_final, mi_estimation_Y_final = mi_estimator_Y(z_test, y_test)
         mi_estimation_Y_final = np.nan_to_num(mi_estimation_Y_final.cpu().data.numpy())
         mi_estimation_Y_final = prun_quantile(mi_estimation_Y_final, FLAGS.mie_k_discard)
+        print('ELEMENTWISE ESTIMATIONS ', mi_estimation_X_final, mi_estimation_Y_final)
+
+        mi_estimation_X_final = mi_estimation_X_final.mean()
         mi_estimation_Y_final = mi_estimation_Y_final.mean()
 
-    print('ESTIMATIONS ', mi_estimation_X_final, mi_estimation_Y_final)
+        print('\nFINAL', mi_estimation_X_final, mi_estimation_Y_final)
+
+
     return mi_estimation_X_final, mi_estimation_Y_final, mi_estimator_X, mi_estimator_Y
 
 def main():
     '''
+    # For debugging purposes
     if FLAGS.use_pretrain and os.path.exists('pretrained_encoders/enc_%sepochs.pt' % FLAGS.num_epochs):
         Encoder = MLP(dnn_input_units, dnn_hidden_units, dnn_output_units, FLAGS).to(device)
         Encoder.load_state_dict(torch.load('pretrained_encoders/enc_%sepochs.pt' % FLAGS.num_epochs))
@@ -273,6 +280,7 @@ def main():
                 torch.save(MIE_X.state_dict(), FLAGS.result_path + '/estimator_models/mie_x_%s_%s_l%s_s%s.pt' % (FLAGS.enc_type.lower(), 'test' if FLAGS.mie_on_test else 'train', layer, seeds[i]))
                 torch.save(MIE_Y.state_dict(), FLAGS.result_path + '/estimator_models/mie_y_%s_%s_l%s_s%s.pt' % (FLAGS.enc_type.lower(), 'test' if FLAGS.mie_on_test else 'train', layer, seeds[i]))
                 print('Saved models successfully ')
+                print(FLAGS.result_path+'/estimator_models')
         
     print('Elapsed time - ', time.time() - start_time)
 
@@ -317,7 +325,6 @@ if __name__=='__main__':
     torch.manual_seed(FLAGS.default_seed)
     seed(FLAGS.default_seed)
 
-    # Loading the MNIST dataset
     if FLAGS.cifar10:
         print('Uploading CIFAR10')
         transform = Compose(
@@ -339,6 +346,7 @@ if __name__=='__main__':
         train_set = torch.utils.data.TensorDataset(X_train, y_train)
         test_set = torch.utils.data.TensorDataset(X_test, y_test)
         print('Done MNIST 12k')
+    # Loading the MNIST dataset
     elif not FLAGS.cifar10:
         print('Uploading Regular MNIST')
         train_set = MNIST('./data/MNIST', download=True, train=True, transform=ToTensor())
@@ -347,7 +355,6 @@ if __name__=='__main__':
     train_loader = DataLoader(train_set, batch_size=FLAGS.batch_size, shuffle=True, num_workers=1)
     test_loader = DataLoader(test_set, batch_size=FLAGS.batch_size, shuffle=True, num_workers=1)
         
-    # TODO: change to work properly with Convolutional architecture
     if FLAGS.encoder_hidden_units:
         encoder_hidden_units = FLAGS.encoder_hidden_units.split(",")
         encoder_hidden_units = [int(dnn_hidden_unit_) for dnn_hidden_unit_ in encoder_hidden_units]

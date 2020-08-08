@@ -14,8 +14,8 @@ do
 	#do
              	echo $wd, $i #, $enc
 		echo "wd_{$i}_$wd"
-                scp gencap/mnist12k/wd/$wd/stoch/acc_numlabels.png results/mnist12k/gc_plots/wd_stoch_{$i}_$wd.png
-		scp gencap/mnist12k/wd/$wd/determ/acc_numlabels.png results/mnist12k/gc_plots/wd_determ_{$i}_$wd.png
+                scp gencap/mnist12k/wd/$wd/stoch/acc_num_labels.png results/mnist12k/gc_plots/wd_stoch_{$i}_$wd.png
+		scp gencap/mnist12k/wd/$wd/determ/acc_num_labels.png results/mnist12k/gc_plots/wd_determ_{$i}_$wd.png
         	let "i+=1"
 	#done
 done
@@ -29,8 +29,8 @@ do
 	#do
              	# echo $wd, $i, $enc
 		echo "wd_{$i}_$wd"
-                scp gencap/cifar10/wd/$wd/determ/acc_numlabels.png results/cifar10/gc_plots/wd_determ_{$i}_$wd.png
-		scp gencap/cifar10/wd/$wd/stoch/acc_numlabels.png results/cifar10/gc_plots/wd_stoch_{$i}_$wd.png
+                scp gencap/cifar10/wd/$wd/determ/acc_num_labels.png results/cifar10/gc_plots/wd_determ_{$i}_$wd.png
+		scp gencap/cifar10/wd/$wd/stoch/acc_num_labels.png results/cifar10/gc_plots/wd_stoch_{$i}_$wd.png
         	let "i+=1"
 	#done
 done
@@ -45,8 +45,8 @@ do
 	# do
              	# echo $dout, $i, $enc
 		echo "dout_{$i}_$dout"
-                scp gencap/mnist12k/dropout/$dout/stoch/acc_numlabels.png results/mnist12k/gc_plots/dout_stoch_{$i}_$dout.png
-		scp gencap/mnist12k/dropout/$dout/determ/acc_numlabels.png results/mnist12k/gc_plots/dout_determ_{$i}_$dout.png
+                scp gencap/mnist12k/dropout/$dout/stoch/acc_num_labels.png results/mnist12k/gc_plots/dout_stoch_{$i}_$dout.png
+		scp gencap/mnist12k/dropout/$dout/determ/acc_num_labels.png results/mnist12k/gc_plots/dout_determ_{$i}_$dout.png
         	let "i+=1"
 	# done
 done
@@ -60,8 +60,8 @@ do
 	# do
              	# echo $dout, $i, $enc
 		echo "dout_{$i}_$dout"
-                scp gencap/cifar10/dropout/$dout/stoch/acc_numlabels.png results/cifar10/gc_plots/dout_stoch_{$i}_$dout.png
-		scp gencap/cifar10/dropout/$dout/determ/acc_numlabels.png results/cifar10/gc_plots/dout_determ_{$i}_$dout.png
+                scp gencap/cifar10/dropout/$dout/stoch/acc_num_labels.png results/cifar10/gc_plots/dout_stoch_{$i}_$dout.png
+		scp gencap/cifar10/dropout/$dout/determ/acc_num_labels.png results/cifar10/gc_plots/dout_determ_{$i}_$dout.png
         	let "i+=1"
 	# done
 	
@@ -79,8 +79,8 @@ do
 	# for sigma in unit learnt
 	# do	
 		
-		scp gencap/mnist12k/ceb/$beta/unit/acc_numlabels.png results/mnist12k/gc_plots/ceb_unit_{$i}_$beta.png
-		scp gencap/mnist12k/ceb/$beta/learnt/acc_numlabels.png results/mnist12k/gc_plots/ceb_learnt_{$i}_$beta.png
+		scp gencap/mnist12k/ceb/$beta/unit/acc_num_labels.png results/mnist12k/gc_plots/ceb_unit_{$i}_$beta.png
+		scp gencap/mnist12k/ceb/$beta/learnt/acc_num_labels.png results/mnist12k/gc_plots/ceb_learnt_{$i}_$beta.png
 	# done
 	let "i+=1"
 done
@@ -94,8 +94,8 @@ do
 	# for sigma in unit learnt
 	# do	
 		
-		scp gencap/cifar10/ceb/$beta/unit/acc_numlabels.png results/cifar10/gc_plots/ceb_unit_{$i}_$beta.png
-		scp gencap/cifar10/ceb/$beta/learnt/acc_numlabels.png results/cifar10/gc_plots/ceb_learnt_{$i}_$beta.png
+		scp gencap/cifar10/ceb/$beta/unit/acc_num_labels.png results/cifar10/gc_plots/ceb_unit_{$i}_$beta.png
+		scp gencap/cifar10/ceb/$beta/learnt/acc_num_labels.png results/cifar10/gc_plots/ceb_learnt_{$i}_$beta.png
 	# done
 	let "i+=1"
 done
