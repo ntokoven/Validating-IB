@@ -85,6 +85,10 @@ def get_option(parser):
                       help='Need to fix sigma q(z|y) to 1')
     parser.add_argument('--dataset', type = str,
                       help='Dataset to use: - cifar10 or mnist12k')
+    parser.add_argument('--use_same_init', type = str,
+                      help='Train all encoders given fixed set of wights parameter initialization')
+    parser.add_argument('--path_to_encoder_model', type = str,
+                      help='Path to the pretrained encoder model that we aim to use for manifold visualization')
     
 
 

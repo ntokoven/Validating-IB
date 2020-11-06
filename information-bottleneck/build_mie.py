@@ -52,9 +52,9 @@ def train_MI(encoder, beta=1, mie_on_test=False, seed=69, num_epochs=2000, layer
     mi_estimator_Y = MIEstimator(z_dim, y_dim).to(device)
 
     optimizer = optim.Adam([
-    {'params': mi_estimator_X.parameters(), 'lr': FLAGS.mie_lr_x}, #default 3e-5
-    {'params': mi_estimator_Y.parameters(), 'lr': FLAGS.mie_lr_y}, #default 1e-4
-    ])
+                        {'params': mi_estimator_X.parameters(), 'lr': FLAGS.mie_lr_x}, #default 3e-5
+                        {'params': mi_estimator_Y.parameters(), 'lr': FLAGS.mie_lr_y}, #default 1e-4
+                        ])
 
     start_time = time.time()
     max_MI_x = max_MI_y = 0

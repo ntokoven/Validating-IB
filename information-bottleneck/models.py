@@ -29,7 +29,7 @@ class MIEstimator(nn.Module):
         return -softplus(-pos) - softplus(neg), pos - neg.exp() + 1 # I_NWJ, I_JS
 
 
-class Flatten(torch.nn.Module):
+class Flatten(nn.Module):
     def forward(self, x):
         batch_size = x.shape[0]
         return x.view(batch_size, -1)

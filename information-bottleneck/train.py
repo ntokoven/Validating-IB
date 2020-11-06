@@ -58,10 +58,10 @@ def train_encoder(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loade
             optimizer.zero_grad()
             if FLAGS.enc_type =='stoch':
                 (mu, std), out, z_train = model(X_train)
-                loss = criterion(out, y_train)
+                loss = criterion(out, y_train).div(math.log(2)) #make log of base 2 
             else:
                 out = model(X_train)
-                loss = criterion(out, y_train)
+                loss = criterion(out, y_train).div(math.log(2)) #make log of base 2 
             loss.backward()
             optimizer.step()
             train_accuracy = accuracy(out, y_train)
@@ -78,10 +78,10 @@ def train_encoder(FLAGS, encoder_hidden_units, decoder_hidden_units, train_loade
 
                 if FLAGS.enc_type == 'stoch':
                     (_, _), out_test, _ = model(X_test)
-                    test_loss = criterion(out_test, y_test)
+                    test_loss = criterion(out_test, y_test).div(math.log(2)) #make log of base 2 
                 else:
                     out_test = model(X_test)
-                    test_loss = criterion(out_test, y_test)
+                    test_loss = criterion(out_test, y_test).div(math.log(2)) #make log of base 2 
 
                 
                 test_accuracy = accuracy(out_test, y_test)
@@ -170,12 +170,13 @@ def train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_l
                     beta += 1e-5
                 info_loss = 0.5 / (1 - beta) * ((mu - mu_y) @ (mu - mu_y + 2 * eps).t()).sum(1).mean()  # notice the reparametrization of beta
                 '''
+                # Our formulation
                 p = torch.distributions.Normal(mu, std)
                 q = torch.distributions.Normal(mu_y, std_y)
 
                 # sample_x = std * eps + mu
                 sample_x = model.reparametrize_n(mu, std, 1)
-                info_loss = (p.log_prob(sample_x) - q.log_prob(sample_x)).sum(dim=1).mean().div(math.log(2))
+                info_loss = (p.log_prob(sample_x) - q.log_prob(sample_x)).sum(dim=1).mean().div(math.log(2)) #I(X, Z|Y) = KL(p(z|x), q(z|y))
             
             
             if np.isnan(class_loss.cpu().detach().item()) or np.isnan(info_loss.cpu().detach().item()):
@@ -236,7 +237,7 @@ def train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_l
                 test_accuracy = accuracy(out_test, y_test)
                 if test_accuracy > max_accuracy:
                     max_accuracy = test_accuracy
-
+                test_upperbound = test_info_loss.item()
                 print('Train: Accuracy - %0.3f, Loss - %0.3f' % (train_accuracy, total_loss))
                 print('Test: Accuracy - %0.3f, Loss - %0.3f' % (test_accuracy, test_total_loss))
                 print('Upperbound I(X, T)', izx_bound.item())
@@ -250,6 +251,6 @@ def train_encoder_VIB(FLAGS, encoder_hidden_units, decoder_hidden_units, train_l
     del(y_test)
 
     model.best_performance = max_accuracy
-    return model.eval()
+    return model.eval(), test_upperbound
 
 
