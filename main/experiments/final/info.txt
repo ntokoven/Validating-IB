@@ -1,0 +1,1 @@
+Here are the final experiments for all models: wd, dropout (determ vs stoch) ceb and vib on mnist12k and cifar10

@@ -1,2 +1,0 @@
-GC experiments for CEB (sigma learnt) and VIB on CIFAR10, MIE. without batch norm 
-Determined region of interest for beta and need to find the transition value
